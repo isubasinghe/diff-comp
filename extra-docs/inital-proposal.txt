@@ -1,0 +1,3 @@
+Title: Applications of Differential Dataflow
+Description: Differential Dataflow is a generalisation of incremental computation, in this project we will investigate uses of this computational model in problems such as graph clustering.
+Suitability: MIT(Distributed)
