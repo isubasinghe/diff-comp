@@ -1,3 +1,6 @@
 [submodule "thesis-overleaf"]
 	path = thesis
 	url = https://git.overleaf.com/60f198da5edde66a831bfa7f
+[submodule "extra-docs/background-lit"]
+	path = extra-docs/background-lit
+	url = https://git.overleaf.com/6103df969996b0466614f2dc
