@@ -4,3 +4,6 @@
 [submodule "extra-docs/background-lit"]
 	path = extra-docs/background-lit
 	url = https://git.overleaf.com/6103df969996b0466614f2dc
+[submodule "extra-docs/propsal"]
+	path = extra-docs/propsal
+	url = https://git.overleaf.com/6110cb072c7d0e7436a7a50f
