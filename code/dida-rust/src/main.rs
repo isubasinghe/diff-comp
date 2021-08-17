@@ -1,7 +1,10 @@
-use std::env;
+use std::{cell::RefCell, env, sync::Mutex};
 
 mod cli;
+mod utils;
+mod shared;
 
 fn main() {
-    cli::parse_opts();
+    let opts = cli::parse_opts();
+    
 }

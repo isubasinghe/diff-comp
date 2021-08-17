@@ -7,14 +7,15 @@ use serde::{Deserialize, Serialize};
     author = "Isitha Subasinghe <subasingheisitha@gmail.com>"
 )]
 #[clap(setting = AppSettings::ColoredHelp)]
-struct Opts {
-    #[clap(short, long, default_value = "peers.toml")]
-    timely_config: String,
+pub struct Opts {
     #[clap(short, long)]
-    verbose: i32,
+    pub data: String, 
+    #[clap(short, long, default_value = "peers.toml")]
+    pub timely_config: String,
+    #[clap(short, long, default_value="0")]
+    pub verbose: u8,
 }
 
-pub fn parse_opts() {
-    let opts = Opts::parse();
-    println!("{:?}", opts)
+pub fn parse_opts() -> Opts {
+    Opts::parse()
 }

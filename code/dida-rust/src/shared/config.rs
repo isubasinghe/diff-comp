@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug)]
 pub enum TimelyConfig {
     Thread,
-    Process(uszie),
+    Process(usize),
     ProcessBinary(usize),
     Cluster {
         threads: usize,
