@@ -1,6 +1,7 @@
 use std::{ fs::File, io::Read};
 
 use shared::config::TimelyConfig;
+use utils::read_file;
 
 mod cli;
 mod utils;
@@ -30,13 +31,11 @@ fn main() {
     let opts = cli::parse_opts();
     let config = read_timely_config(&opts.timely_config);
 
-    
+    timely::execute(config,  |worker| {
 
-    timely::execute(config, |worker| {
         let index = worker.index();
         let peers = worker.peers();
 
-        
 
     }).expect("timely failed to start");
 
