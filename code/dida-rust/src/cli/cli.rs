@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 pub struct Opts {
     #[clap(short, long)]
     pub data: String, 
-    #[clap(short, long, default_value = "peers.toml")]
+    #[clap(short, long, default_value = "communication.ron")]
     pub timely_config: String,
     #[clap(short, long, default_value="0")]
     pub verbose: u8,

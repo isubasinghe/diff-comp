@@ -27,10 +27,8 @@ pub fn read_file(path: &str, peers: usize) {
 
 
     let edges = reader.lines().flat_map(|line_res| {
-    
         let line: Result<Vec<u32>, Error> = line_res.map(|line| line.split_whitespace().filter_map(|s| s.parse::<u32>().ok() ).collect());
         line 
-
     });
 
     let mut node_set: HashSet<Node<u32>> = HashSet::new();
