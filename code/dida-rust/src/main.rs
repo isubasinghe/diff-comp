@@ -33,6 +33,10 @@ fn main() {
     
 
     timely::execute(config, |worker| {
+        let index = worker.index();
+        let peers = worker.peers();
+
+        
 
     }).expect("timely failed to start");
 
