@@ -12,3 +12,15 @@ pub enum TimelyConfig {
         report: bool,
     },
 }
+
+
+pub enum InputConfig {
+    File(String),
+    Kafka {
+        host: String,
+        port: String, 
+        topic: String,
+        password: String, 
+        user: String,
+    }
+}

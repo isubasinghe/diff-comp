@@ -1,18 +1,21 @@
 
-use std::{collections::HashSet, fs::File, io::{self, BufRead, BufReader, Error}, sync::{Arc, Mutex}, thread};
+use std::{collections::HashSet, fs::File, io::{ BufRead, BufReader, Error}, sync::{Arc, Mutex}, thread};
 use crossbeam::channel::{unbounded};
 
 use crate::shared::{Edge, Node};
 
 
 
+pub fn parse_uri(uri: &str) {
+
+}
 
 pub fn read_file(path: &str, peers: usize) {
 
     let file = File::open(path).expect("unable to open file");
     let reader = BufReader::new(file);
 
-    
+
     for i in 1..peers {
 
     }
