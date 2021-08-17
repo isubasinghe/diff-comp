@@ -1,4 +1,4 @@
-use std::{cell::RefCell, env, fs::File, io::Read, sync::Mutex};
+use std::{ fs::File, io::Read};
 
 use shared::config::TimelyConfig;
 
