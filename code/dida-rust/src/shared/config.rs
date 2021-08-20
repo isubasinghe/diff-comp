@@ -25,6 +25,13 @@ impl TimelyConfig {
                 => CommunicationConfig::Cluster{threads, process, addresses, report, log_fn: Box::new(|_| None) }
         }
     }
+    pub fn num_peers(&self) -> usize {
+        match self {
+            TimelyConfig::Thread => 1,
+            TimelyConfig::Process(size) => *size, 
+            TimelyConfig::Cluster {threads, process, addresses, report} => *threads,
+        }
+    }
 }
 
 pub enum InputConfig {
