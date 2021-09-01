@@ -158,6 +158,8 @@ dependencies = [
 name = "diff-streams"
 version = "0.1.0"
 dependencies = [
+ "abomonation",
+ "abomonation_derive",
  "clap",
  "crossbeam",
  "differential-dataflow",

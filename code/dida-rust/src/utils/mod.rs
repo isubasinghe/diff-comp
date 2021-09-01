@@ -2,7 +2,7 @@
 use std::{collections::{HashMap, HashSet}, fs::File, io::{ BufRead, BufReader, Error}, thread};
 use crossbeam::channel::{Receiver,  unbounded};
 
-use crate::shared::{Edge, Node};
+use crate::shared::{ToEdge, FromEdge, Edge, Node};
 
 
 type PipedNode<G> = Option<Node<G>>;
@@ -40,7 +40,8 @@ pub fn read_file(path: &str, peers: usize) -> HashMap<usize, (Receiver<PipedNode
     
         for edge in edges {
     
-            
+            // 2 is the number of nodes we expect on a line
+            // obviously
             if edge.len() != 2 {
                 panic!("Invalid number of edges {}", edge.len());
             }
@@ -61,7 +62,7 @@ pub fn read_file(path: &str, peers: usize) -> HashMap<usize, (Receiver<PipedNode
                 node_sender.send(Some(node1)).unwrap();
             }
     
-            let edge: Edge<u32> = (edge[0], edge[1]);
+            let edge: Edge<u32> = (FromEdge{from: edge[0]}, ToEdge{to: edge[1], weight: 1});
     
             edges_sender.send(Some(edge)).unwrap();
     
