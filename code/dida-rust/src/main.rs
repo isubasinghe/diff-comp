@@ -111,14 +111,26 @@ fn main() {
         edges.advance_to(1);
         edges.flush();
 
-        let n1: Node<u32> = 20.bind();
-        nodes.insert((n1, Community { id: 20, weights: 1 }));
+        nodes.insert((Node { id: 20 }, Community { id: 1, weights: 1 }));
         nodes.insert((Node { id: 1 }, Community { id: 1, weights: 1 }));
         nodes.insert((Node { id: 3 }, Community { id: 1, weights: 1 }));
 
-        edges.insert((Node { id: 1 }, ToEdge { to: 3, weight: 3 }));
-        edges.insert((Node { id: 3 }, ToEdge { to: 2, weight: 5 }));
-        edges.insert((Node { id: 1 }, ToEdge { to: 20, weight: 2 }));
+        edges.insert((Node { id: 1 }, ToEdge { to: 3, weight: 5 }));
+        edges.insert((Node { id: 3 }, ToEdge { to: 1, weight: 5 }));
+
+        edges.insert((Node { id: 3 }, ToEdge { to: 2, weight: 7 }));
+        edges.insert((Node { id: 2 }, ToEdge { to: 3, weight: 7 }));
+
+        edges.insert((Node { id: 1 }, ToEdge { to: 20, weight: 11 }));
+        edges.insert(((Node { id: 20 }), ToEdge { to: 1, weight: 11 }));
+
+        nodes.insert((Node { id: 5 }, Community { id: 5, weights: 1 }));
+        nodes.insert((Node { id: 6 }, Community { id: 5, weights: 1 }));
+        nodes.insert((Node { id: 7 }, Community { id: 5, weights: 1 }));
+        nodes.insert((Node { id: 8 }, Community { id: 5, weights: 1 }));
+
+        edges.insert((Node { id: 5 }, ToEdge { to: 6, weight: 13 }));
+        edges.insert((Node { id: 6 }, ToEdge { to: 5, weight: 13 }));
     })
     .expect("timely failed to start");
 }
