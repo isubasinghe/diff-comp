@@ -6,13 +6,13 @@ use differential_dataflow::input::Input;
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::arrange::*;
 use differential_dataflow::operators::consolidate::Consolidate;
+use differential_dataflow::operators::iterate::Variable;
 use differential_dataflow::operators::join::Join;
 use differential_dataflow::operators::reduce::*;
 use differential_dataflow::operators::Iterate;
-use differential_dataflow::operators::iterate::Variable;
 use differential_dataflow::{AsCollection, Collection};
 use shared::config::TimelyConfig;
-use shared::{Community, Node, ToEdge, FromEdge, Unbind, Bind};
+use shared::{Bind, Community, FromEdge, Node, ToEdge, Unbind};
 use timely::dataflow::operators::{Map, ToStream};
 use timely::dataflow::Scope;
 use utils::read_file;
@@ -43,7 +43,6 @@ fn read_timely_config(path: &str) -> (timely::Config, usize) {
     (config, num_peers)
 }
 
-
 fn main() {
     let opts = cli::parse_opts();
     let (config, num_peers) = read_timely_config(&opts.timely_config);
@@ -51,27 +50,47 @@ fn main() {
     let hashmap = read_file(&opts.data, num_peers);
     timely::execute(config, move |worker| {
         let index = worker.index();
-        let peers = worker.peers();
 
-        let receiver = hashmap.get(&index).unwrap();
-
-        let timer = worker.timer();
+        // let receiver = hashmap.get(&index).unwrap();
 
         let (mut nodes, mut edges) = worker.dataflow(|scope| {
             let (node_handle, nodes) = scope.new_collection();
             let (edge_handle, edges) = scope.new_collection();
 
+            let paths = nodes.join(&edges);
+            paths.inspect(|(x, _, _)| println!("PATH1: {:?}", x));
+            let paths = paths.map(
+                |(node, (community, to_edge)): (Node<u32>, (Community, ToEdge<u32>))| {
+                    (Node { id: to_edge.to }, (node, community))
+                },
+            );
 
-            let communities = nodes
-                                .map(|(_, c)| c).distinct();
+            let paths = paths
+                .join_map(&nodes, |key, a, b| {
+                    let a = *a;
+                    let community1 = a.1;
+                    let community2 = *b;
+                    let node1;
+                    let node2;
+                    if key < &a.0 {
+                        node1 = *key;
+                        node2 = a.0;
+                    } else {
+                        node1 = a.0;
+                        node2 = *key;
+                    }
+                    ((node1, node2), (community1, community2))
+                })
+                .filter(|((_, _), (c1, c2))| c1.id == c2.id)
+                .distinct();
 
+            paths.inspect(|(x, _, _)| println!("PATHS: {:?}", x));
 
-            let paths = nodes.join_map(&edges, |_, _, to: &ToEdge<u32>| {
-                ((), to.weight)
-            });
+            let paths = nodes.join_map(&edges, |key, _, to: &ToEdge<u32>| (*key, to.weight));
 
+            paths.inspect(|x| println!("{:?}", x));
 
-            let m = paths.reduce(|_key, input, output| {
+            let k_i = paths.reduce(|_, input, output| {
                 let mut sum = 0;
 
                 for (c, _) in input {
@@ -80,7 +99,7 @@ fn main() {
                 output.push((sum, 1));
             });
 
-            m.inspect(|(x, _, _)| println!("{:?}", x));
+            k_i.inspect(|x| println!("REDUCE: {:?}", x));
 
             (node_handle, edge_handle)
         });
@@ -93,10 +112,13 @@ fn main() {
         edges.flush();
 
         let n1: Node<u32> = 20.bind();
-        nodes.insert((n1, Community{id: 20, weights: 1}));
-        nodes.insert((Node{id: 1}, Community{id: 1, weights: 1} ));
-        edges.insert((Node{id: 1}, ToEdge{to: 2, weight: 3}));
-        edges.insert((Node{id: 20}, ToEdge{to: 1, weight: 2}));
+        nodes.insert((n1, Community { id: 20, weights: 1 }));
+        nodes.insert((Node { id: 1 }, Community { id: 1, weights: 1 }));
+        nodes.insert((Node { id: 3 }, Community { id: 1, weights: 1 }));
+
+        edges.insert((Node { id: 1 }, ToEdge { to: 3, weight: 3 }));
+        edges.insert((Node { id: 3 }, ToEdge { to: 2, weight: 5 }));
+        edges.insert((Node { id: 1 }, ToEdge { to: 20, weight: 2 }));
     })
     .expect("timely failed to start");
 }
