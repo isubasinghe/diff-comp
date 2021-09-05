@@ -9,3 +9,15 @@ libraryDependencies += "org.apache.spark" %% "spark-sql" % "3.1.2" % "provided"
 libraryDependencies += "org.apache.spark" %% "spark-streaming" % "3.1.2" % "provided"
 libraryDependencies += "org.apache.spark" %% "spark-graphx" % "3.1.2"
 libraryDependencies += "log4j" % "log4j" % "1.2.17"
+libraryDependencies += "dev.zio" %% "zio" % "2.0.0-M2"
+libraryDependencies += "dev.zio" %% "zio-streams" % "2.0.0-M2"
+libraryDependencies += "org.scala-lang.modules" %% "scala-parser-combinators" % "2.0.0"
+libraryDependencies += "org.typelevel" %% "cats-effect" % "2.5.3" withSources() withJavadoc()
+
+scalacOptions ++= Seq(
+  "-feature",
+  "-deprecation",
+  "-unchecked",
+  "-language:postfixOps",
+  "-language:higherKinds",
+  "-Ypartial-unification")
