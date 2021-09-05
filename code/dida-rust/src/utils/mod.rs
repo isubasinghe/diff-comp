@@ -1,3 +1,5 @@
+pub mod kafka;
+
 
 use std::{collections::{HashMap, HashSet}, fs::File, io::{ BufRead, BufReader, Error}, thread};
 use crossbeam::channel::{Receiver,  unbounded};
