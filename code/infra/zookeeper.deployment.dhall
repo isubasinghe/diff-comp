@@ -1,16 +1,21 @@
 
 let kubernetes = https://raw.githubusercontent.com/dhall-lang/dhall-kubernetes/master/1.17/package.dhall sha256:532e110f424ea8a9f960a13b2ca54779ddcac5d5aa531f86d82f41f8f18d7ef1
 let env = ./zookeeper.env.dhall
+
+-- let d: { mapKey : Text, mapValue: Text } = toMap { "asd" = "hello" } 
+
+let d = toMap {name = "hello"}
+
 let deployment = 
     kubernetes.Deployment::{
       , metadata = kubernetes.ObjectMeta::{ name = Some env.selector }
       , spec = Some kubernetes.DeploymentSpec::{
         , selector = kubernetes.LabelSelector::{
-          , matchLabels = Some (toMap { name = env.selector })
+          , matchLabels = Some (toMap { app = env.selector })
           }
         , replicas = Some +2
         , template = kubernetes.PodTemplateSpec::{
-          , metadata = Some kubernetes.ObjectMeta::{ name = Some env.selector }
+          , metadata = Some kubernetes.ObjectMeta::{ labels = Some ( toMap { app = env.selector } ) }
           , spec = Some kubernetes.PodSpec::{
             , containers =
               [ kubernetes.Container::{
