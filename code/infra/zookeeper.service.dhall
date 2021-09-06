@@ -8,17 +8,17 @@ let spec =
       , ports = Some
         [ kubernetes.ServicePort::{
           , name = Some "client"
-          , port = +2181
+          , port = env.zookeeperClientPort
           , protocol = Some "TCP"
           }
           , kubernetes.ServicePort::{
             , name = Some "follower"
-            , port = +2888
+            , port = env.zookeeperFollowerPort
             , protocol = Some "TCP" 
           }
           , kubernetes.ServicePort::{
             , name = Some "leader"
-            , port = +3888
+            , port = env.zookeeperLeader
             , protocol = Some "TCP"
           }
         ]
@@ -28,7 +28,7 @@ let service
     : kubernetes.Service.Type
     = kubernetes.Service::{
       , metadata = kubernetes.ObjectMeta::{
-        , name = Some "zoo1"
+        , name = Some env.zookeeperName
         , labels = Some (toMap { app = env.selector })
         }
       , spec = Some kubernetes.ServiceSpec::spec

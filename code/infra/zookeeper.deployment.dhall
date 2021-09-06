@@ -14,8 +14,8 @@ let deployment =
           , spec = Some kubernetes.PodSpec::{
             , containers =
               [ kubernetes.Container::{
-                , name = "nginx"
-                , image = Some "nginx:1.15.3"
+                , name = env.zookeeperName
+                , image = Some "digitalwonderland/zookeeper"
                 , ports = Some
                   [ kubernetes.ContainerPort::{ containerPort = env.zookeeperPort } ]
                 , env = Some
@@ -26,7 +26,7 @@ let deployment =
                     }
                     , kubernetes.EnvVar::{
                       , name = "ZOOKEEPER_SERVER_1"
-                      , value = Some "zoo1"
+                      , value = Some env.zookeeperName
                     } 
                   ]
                 }
