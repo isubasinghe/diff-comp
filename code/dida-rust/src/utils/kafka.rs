@@ -7,6 +7,7 @@ use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::AsyncRuntime;
 use futures::future::{self, FutureExt};
 use futures::stream::StreamExt;
+use tokio;
 
 pub struct AsyncStdRunTime;
 
@@ -17,11 +18,11 @@ impl AsyncRuntime for AsyncStdRunTime {
     where
         T: Future<Output=()> + Send + 'static
     {
-        unimplemented!()
+        tokio::spawn(task);
     }
 
     fn delay_for(duration: std::time::Duration) -> Self::Delay {
-        unimplemented!()
+        Box::pin(tokio::time::sleep(duration))
     }
 }
 
