@@ -1,6 +1,6 @@
 
 let selector = "zookeeper-kafka"
-let zookeeperPort = +2081
+let zookeeperPort = +2181
 let zookeeperID = "1"
 let zookeeperName = "zookeeperkafka1"
 let zookeeperClientPort = +2181
