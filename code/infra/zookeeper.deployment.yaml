@@ -21,4 +21,4 @@ spec:
           image: digitalwonderland/zookeeper
           name: zookeeperkafka1
           ports:
-            - containerPort: 2081
+            - containerPort: 2181

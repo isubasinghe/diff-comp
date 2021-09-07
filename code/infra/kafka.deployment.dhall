@@ -3,7 +3,7 @@ let kubernetes = https://raw.githubusercontent.com/dhall-lang/dhall-kubernetes/m
 let env = ./kafka.env.dhall
 let zooEnv = ./zookeeper.env.dhall
 
-let zookeeperURI = "${zooEnv.zookeeperName}:${Integer/show zooEnv.zookeeperPort}"
+let zookeeperURI = "${zooEnv.zookeeperName}:${Natural/show (Integer/clamp zooEnv.zookeeperPort)}"
 
 let deployment = 
     kubernetes.Deployment::{
