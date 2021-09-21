@@ -1,17 +1,17 @@
 use std::{fs::File, io::Read};
 
 use differential_dataflow::input::Input;
-// use differential_dataflow::lattice::Lattice;
-// use differential_dataflow::operators::arrange::*;
-// use differential_dataflow::operators::consolidate::Consolidate;
-// use differential_dataflow::operators::iterate::Variable;
+use differential_dataflow::lattice::Lattice;
+use differential_dataflow::operators::arrange::*;
+use differential_dataflow::operators::consolidate::Consolidate;
+use differential_dataflow::operators::iterate::Variable;
 use differential_dataflow::operators::join::Join;
-// use differential_dataflow::operators::reduce::*;
-// use differential_dataflow::operators::Iterate;
-// use differential_dataflow::{AsCollection, Collection};
+use differential_dataflow::operators::reduce::*;
+use differential_dataflow::operators::Iterate;
+use differential_dataflow::{AsCollection, Collection};
+use difflouvain_utils::cli;
 use difflouvain_utils::shared::config::TimelyConfig;
 use difflouvain_utils::shared::{Community, Node, ToEdge};
-use difflouvain_utils::cli;
 
 fn read_timely_config(path: &str) -> (timely::Config, usize) {
     let mut file = File::open(path).unwrap();
@@ -40,7 +40,6 @@ fn main() {
     let (config, _num_peers) = read_timely_config(&opts.timely_config);
 
     timely::execute(config, move |worker| {
-
         // let receiver = hashmap.get(&index).unwrap();
 
         let (mut nodes, mut edges) = worker.dataflow(|scope| {
@@ -52,19 +51,35 @@ fn main() {
             // (node, (community, edge))
             let paths = nodes.join(&edges);
 
-            paths.inspect(|(x, _, _)| println!("EDGE {:?}", x));
-
             // (n1's edge_node,  (n1,n1's community, n1's edge))
-            let paths_by_edge_node = paths.map(|(node, (community, edge)): (Node<u32>, (Community, ToEdge<u32>))| (Node{id: edge.to}, (node, community, edge) ) );
+            let paths_by_edge_node = paths.map(
+                |(node, (community, edge)): (Node<u32>, (Community, ToEdge<u32>))| {
+                    (Node { id: edge.to }, (node, community, edge))
+                },
+            );
+
             // (n1's edge node: n2, ((n1, n1's community, n'1 edge), (n2's community, n2's edge to n1))
-            let paths_by_edge_node_comm = paths_by_edge_node.join_map(&nodes, |key, a, b|{
-                (*key, *a, *b)
+            let paths_by_edge_node_comm =
+                paths_by_edge_node.join_map(&nodes, |key, a, b| (*key, (*a, *b)));
+
+            paths_by_edge_node_comm.inspect(|((x, y), _, _)| println!("\n1:{:?}\n2:{:?}", x, y));
+
+            let communities = paths_by_edge_node_comm
+                .filter(|(n2, ((n1, n1c, _edge), n2c))| n1c == n2c && n1 < n2)
+                .map(|(n2, ((n1, _n1c, edge), n2c))| (n2c, (n1, n2, edge)));
+
+            let sigma_in = communities.reduce(|_key, input, output| {
+                let mut sum = 0;
+                for ((_n1, _n2, edge), _) in input {
+                    sum += edge.weight;
+                }
+                output.push((sum, 1));
             });
-            paths_by_edge_node_comm.inspect(|(x, _, _)| println!("G: {:?}", x));
+
+            sigma_in.inspect(|((c, w), _, _)| println!("C: {:?}\nW: {:?}\n\n", c, w));
 
             (node_handle, edge_handle)
         });
-
 
         nodes.advance_to(1);
         nodes.flush();
@@ -91,6 +106,9 @@ fn main() {
 
         edges.insert((Node { id: 5 }, ToEdge { to: 6, weight: 13 }));
         edges.insert((Node { id: 6 }, ToEdge { to: 5, weight: 13 }));
+
+        edges.insert((Node { id: 5 }, ToEdge { to: 1, weight: 1 }));
+        edges.insert((Node { id: 1 }, ToEdge { to: 5, weight: 1 }));
     })
     .expect("timely failed to start");
 }
