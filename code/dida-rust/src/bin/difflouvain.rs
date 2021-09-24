@@ -53,6 +53,16 @@ fn main() {
             // (node, (community, edge))
             let paths = nodes.join(&edges);
 
+            let k_i = paths.reduce(
+                |_key, input: &[(&(Community, ToEdge<u32>), isize)], output| {
+                    let mut sum = 0;
+
+                    for ((_c, e), _) in input {
+                        sum += e.weight;
+                    }
+                    output.push((sum, 1));
+                },
+            );
             // Simple mapping to obtain the node from n1
             // (n1's edge_node,  (n1,n1's community, n1's edge))
             let paths_by_edge_node = paths.map(
@@ -63,19 +73,34 @@ fn main() {
 
             // Obtain the community of the edge
             // (n1's edge node: n2, ((n1, n1's community, n'1 edge), (n2's community, n2's edge to n1))
-            let paths_by_edge_node_comm =
-                paths_by_edge_node.join_map(&nodes, |key, a, b| (*key, (*a, *b)));
+            let paths_by_edge_node_comm = paths_by_edge_node
+                .join_map(&nodes, |n2, (n1, n1c, edge), n2c| {
+                    (*n1c, (*n1, *n2, *edge, *n2c))
+                });
 
             // (n2,n1) and (n1,n2) present, this will double weights
             // so we sort and take the lowest essentially n1 < n2 does this
             // index by community as well
             let communities =
-                paths_by_edge_node_comm.map(|(n2, ((n1, _n1c, edge), n2c))| (n2c, (n1, n2, edge)));
+                paths_by_edge_node_comm.filter(|(n1c, (_n1, _n2, _edge, n2c))| n1c == n2c);
+
+            let sigma_total = paths_by_edge_node_comm
+                .filter(|(n1c, (_n1, _n2, _edge, n2c))| n1c != n2c)
+                .reduce(|_key, input, output| {
+                    let mut sum = 0;
+                    for ((_n1, _n2, edge, _), _) in input {
+                        sum += edge.weight;
+                    }
+                    output.push((sum, 1));
+                });
+
+            sigma_total.inspect(|((c, w), _, _)| println!("C: {:?}\tW: {:?}", c, w));
 
             // find all the weights for a given community
             let sigma_in = communities.reduce(|_key, input, output| {
                 let mut sum = 0;
-                for ((n1, n2, edge), _) in input {
+
+                for ((n1, n2, edge, _n2c), _) in input {
                     if n1 < n2 {
                         sum += edge.weight;
                     }
@@ -83,9 +108,9 @@ fn main() {
                 output.push((sum, 1));
             });
 
-            communities.inspect(|(x, _, _)| println!("S: {:?}", x));
+            /* let sigma_tot = communities
+            .map(|(n2c, (n1, n2, edge))| (n1, (n2c, n2, edge))) */
 
-            sigma_in.inspect(|((c, w), _, _)| println!("C: {:?}\nW: {:?}", c, w));
             (node_handle, edge_handle)
         });
 
