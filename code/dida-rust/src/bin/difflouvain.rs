@@ -12,6 +12,7 @@ use differential_dataflow::{AsCollection, Collection};
 use difflouvain_utils::cli;
 use difflouvain_utils::shared::config::TimelyConfig;
 use difflouvain_utils::shared::{Community, Node, ToEdge};
+use timely::dataflow::operators::branch::Branch;
 
 fn read_timely_config(path: &str) -> (timely::Config, usize) {
     let mut file = File::open(path).unwrap();
@@ -48,9 +49,11 @@ fn main() {
 
             // Find every node in C
             // find all edges of node
+            // This is simply all the paths that exist
             // (node, (community, edge))
             let paths = nodes.join(&edges);
 
+            // Simple mapping to obtain the node from n1
             // (n1's edge_node,  (n1,n1's community, n1's edge))
             let paths_by_edge_node = paths.map(
                 |(node, (community, edge)): (Node<u32>, (Community, ToEdge<u32>))| {
@@ -58,26 +61,31 @@ fn main() {
                 },
             );
 
+            // Obtain the community of the edge
             // (n1's edge node: n2, ((n1, n1's community, n'1 edge), (n2's community, n2's edge to n1))
             let paths_by_edge_node_comm =
                 paths_by_edge_node.join_map(&nodes, |key, a, b| (*key, (*a, *b)));
 
-            paths_by_edge_node_comm.inspect(|((x, y), _, _)| println!("\n1:{:?}\n2:{:?}", x, y));
+            // (n2,n1) and (n1,n2) present, this will double weights
+            // so we sort and take the lowest essentially n1 < n2 does this
+            // index by community as well
+            let communities =
+                paths_by_edge_node_comm.map(|(n2, ((n1, _n1c, edge), n2c))| (n2c, (n1, n2, edge)));
 
-            let communities = paths_by_edge_node_comm
-                .filter(|(n2, ((n1, n1c, _edge), n2c))| n1c == n2c && n1 < n2)
-                .map(|(n2, ((n1, _n1c, edge), n2c))| (n2c, (n1, n2, edge)));
-
+            // find all the weights for a given community
             let sigma_in = communities.reduce(|_key, input, output| {
                 let mut sum = 0;
-                for ((_n1, _n2, edge), _) in input {
-                    sum += edge.weight;
+                for ((n1, n2, edge), _) in input {
+                    if n1 < n2 {
+                        sum += edge.weight;
+                    }
                 }
                 output.push((sum, 1));
             });
 
-            sigma_in.inspect(|((c, w), _, _)| println!("C: {:?}\nW: {:?}\n\n", c, w));
+            communities.inspect(|(x, _, _)| println!("S: {:?}", x));
 
+            sigma_in.inspect(|((c, w), _, _)| println!("C: {:?}\nW: {:?}", c, w));
             (node_handle, edge_handle)
         });
 
