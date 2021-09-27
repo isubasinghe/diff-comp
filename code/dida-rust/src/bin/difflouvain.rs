@@ -1,5 +1,3 @@
-use std::{fs::File, io::Read};
-
 use differential_dataflow::input::Input;
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::arrange::*;
@@ -11,7 +9,9 @@ use differential_dataflow::operators::Iterate;
 use differential_dataflow::{AsCollection, Collection};
 use difflouvain_utils::cli;
 use difflouvain_utils::shared::config::TimelyConfig;
-use difflouvain_utils::shared::{Community, Node, ToEdge};
+use difflouvain_utils::shared::{CommEdge, Community, Node, ToEdge};
+use std::ops::Mul;
+use std::{fs::File, io::Read};
 use timely::dataflow::operators::branch::Branch;
 
 fn read_timely_config(path: &str) -> (timely::Config, usize) {
@@ -78,6 +78,21 @@ fn main() {
                     (*n1c, (*n1, *n2, *edge, *n2c))
                 });
 
+            let sigma_k_in = paths_by_edge_node_comm
+                .map(|(n1c, (n1, n2, edge, n2c))| ((n1, n2c), (n1c, n2, edge)))
+                .filter(|((_n1, n2c), (n1c, _n2, _edge))| n1c != n2c)
+                .reduce(|(n1, n2c), input, output| {
+                    let mut sum = 0;
+                    for ((n1c, n2, edge), _) in input {
+                        println!("{:?} : {:?}", (n1, n2c), edge);
+                        sum += edge.weight;
+                    }
+                    output.push((sum, 1));
+                });
+
+            sigma_k_in
+                .inspect(|(((n1, n2c), sum), _, _)| println!("{:?}->{:?} : {:?}", n1, n2c, sum));
+
             // (n2,n1) and (n1,n2) present, this will double weights
             // so we sort and take the lowest essentially n1 < n2 does this
             // index by community as well
@@ -108,8 +123,45 @@ fn main() {
                 output.push((sum, 1));
             });
 
-            /* let sigma_tot = communities
-            .map(|(n2c, (n1, n2, edge))| (n1, (n2c, n2, edge))) */
+            let aggreg = paths_by_edge_node_comm
+                .join_map(&sigma_in, |n1c, (n1, n2, edge, n2c), sigma_in| {
+                    (*n1c, (*n1, *n2, *edge, *n2c, *sigma_in))
+                })
+                .join_map(
+                    &sigma_total,
+                    |n1c, (n1, n2, edge, n2c, sigma_in), sigma_tot| {
+                        ((*n2, *n1c), (*n1, *edge, *n2c, *sigma_in, *sigma_tot))
+                    },
+                )
+                .join_map(
+                    &sigma_k_in,
+                    |(n2, n1c), (n1, edge, n2c, sigma_in, sigma_tot), sigma_k_in| {
+                        (
+                            *n2,
+                            (*n1, *n1c, *edge, *n2c, *sigma_in, *sigma_tot, *sigma_k_in),
+                        )
+                    },
+                )
+                .join_map(
+                    &k_i,
+                    |n2, (n1, n1c, edge, n2c, sigma_in, sigma_tot, sigma_k_in), k_in| {
+                        (
+                            *n1,
+                            (
+                                *n1c,
+                                *edge,
+                                *n2,
+                                *n2c,
+                                *sigma_in,
+                                *sigma_tot,
+                                *sigma_k_in,
+                                *k_in,
+                            ),
+                        )
+                    },
+                );
+
+            aggreg.inspect(|(x, _, _)| println!("{:?}", x));
 
             (node_handle, edge_handle)
         });
@@ -122,6 +174,8 @@ fn main() {
         nodes.insert((Node { id: 20 }, Community { id: 1, weights: 1 }));
         nodes.insert((Node { id: 1 }, Community { id: 1, weights: 1 }));
         nodes.insert((Node { id: 3 }, Community { id: 1, weights: 1 }));
+
+        nodes.insert((Node { id: 2 }, Community { id: 2, weights: 1 }));
 
         edges.insert((Node { id: 1 }, ToEdge { to: 3, weight: 5 }));
         edges.insert((Node { id: 3 }, ToEdge { to: 1, weight: 5 }));
@@ -142,6 +196,12 @@ fn main() {
 
         edges.insert((Node { id: 5 }, ToEdge { to: 1, weight: 1 }));
         edges.insert((Node { id: 1 }, ToEdge { to: 5, weight: 1 }));
+
+        edges.insert((Node { id: 8 }, ToEdge { to: 20, weight: 23 }));
+        edges.insert((Node { id: 20 }, ToEdge { to: 8, weight: 23 }));
+
+        edges.insert((Node { id: 5 }, ToEdge { to: 7, weight: 17 }));
+        edges.insert((Node { id: 7 }, ToEdge { to: 5, weight: 17 }));
     })
     .expect("timely failed to start");
 }
