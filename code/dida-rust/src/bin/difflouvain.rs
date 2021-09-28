@@ -10,9 +10,8 @@ use differential_dataflow::{AsCollection, Collection};
 use difflouvain_utils::cli;
 use difflouvain_utils::shared::config::TimelyConfig;
 use difflouvain_utils::shared::{CommEdge, Community, Node, ToEdge};
-use std::ops::Mul;
+use std::sync::{Arc, Mutex};
 use std::{fs::File, io::Read};
-use timely::dataflow::operators::branch::Branch;
 
 fn read_timely_config(path: &str) -> (timely::Config, usize) {
     let mut file = File::open(path).unwrap();
@@ -53,6 +52,10 @@ fn main() {
             // (node, (community, edge))
             let paths = nodes.join(&edges);
 
+            let m_times_2 = paths
+                .explode(|(_, (_, e)): (_, (_, ToEdge<u32>))| Some(((), e.weight as isize)))
+                .count();
+
             let k_i = paths.reduce(
                 |_key, input: &[(&(Community, ToEdge<u32>), isize)], output| {
                     let mut sum = 0;
@@ -82,16 +85,12 @@ fn main() {
                 .map(|(n1c, (n1, n2, edge, n2c))| ((n1, n2c), (n1c, n2, edge)))
                 .filter(|((_n1, n2c), (n1c, _n2, _edge))| n1c != n2c)
                 .reduce(|(n1, n2c), input, output| {
-                    let mut sum = 0;
+                    let mut sum: i64 = 0;
                     for ((n1c, n2, edge), _) in input {
-                        println!("{:?} : {:?}", (n1, n2c), edge);
-                        sum += edge.weight;
+                        sum += edge.weight as i64;
                     }
                     output.push((sum, 1));
                 });
-
-            sigma_k_in
-                .inspect(|(((n1, n2c), sum), _, _)| println!("{:?}->{:?} : {:?}", n1, n2c, sum));
 
             // (n2,n1) and (n1,n2) present, this will double weights
             // so we sort and take the lowest essentially n1 < n2 does this
@@ -102,22 +101,20 @@ fn main() {
             let sigma_total = paths_by_edge_node_comm
                 .filter(|(n1c, (_n1, _n2, _edge, n2c))| n1c != n2c)
                 .reduce(|_key, input, output| {
-                    let mut sum = 0;
+                    let mut sum: i64 = 0;
                     for ((_n1, _n2, edge, _), _) in input {
-                        sum += edge.weight;
+                        sum += edge.weight as i64;
                     }
                     output.push((sum, 1));
                 });
 
-            sigma_total.inspect(|((c, w), _, _)| println!("C: {:?}\tW: {:?}", c, w));
-
             // find all the weights for a given community
             let sigma_in = communities.reduce(|_key, input, output| {
-                let mut sum = 0;
+                let mut sum: i64 = 0;
 
                 for ((n1, n2, edge, _n2c), _) in input {
                     if n1 < n2 {
-                        sum += edge.weight;
+                        sum += edge.weight as i64;
                     }
                 }
                 output.push((sum, 1));
@@ -146,8 +143,9 @@ fn main() {
                     &k_i,
                     |n2, (n1, n1c, edge, n2c, sigma_in, sigma_tot, sigma_k_in), k_in| {
                         (
-                            *n1,
+                            (),
                             (
+                                *n1,
                                 *n1c,
                                 *edge,
                                 *n2,
@@ -159,6 +157,10 @@ fn main() {
                             ),
                         )
                     },
+                )
+                .join_map(
+                    &m_times_2,
+                    |_, (n1, n1c, edge, n2, n2c, sigma_in, sigma_tot, sigma_k_in, k_in), m| {},
                 );
 
             aggreg.inspect(|(x, _, _)| println!("{:?}", x));
