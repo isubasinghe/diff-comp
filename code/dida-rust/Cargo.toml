@@ -17,6 +17,7 @@ abomonation_derive = "0.5.0"
 rdkafka = { version = "0.25", features=["cmake-build"] }
 tokio = { version ="1.11.0", features=["full"] }
 futures = "0.3.17"
+num-traits="0.2.14"
 
 [lib]
 name="difflouvain_utils"

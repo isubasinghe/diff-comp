@@ -1,3 +1,4 @@
+use core::cmp::Ordering;
 use differential_dataflow::input::Input;
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::arrange::*;
@@ -10,8 +11,59 @@ use differential_dataflow::{AsCollection, Collection};
 use difflouvain_utils::cli;
 use difflouvain_utils::shared::config::TimelyConfig;
 use difflouvain_utils::shared::{CommEdge, Community, Node, ToEdge};
+use num_traits::Float;
+
 use std::sync::{Arc, Mutex};
 use std::{fs::File, io::Read};
+
+#[derive(Debug, Default, Clone, Copy)]
+struct OrderedFloat<T>(pub T);
+
+impl<T: Float> OrderedFloat<T> {
+    #[inline]
+    fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+impl<T: Float> AsMut<T> for OrderedFloat<T> {
+    #[inline]
+    fn as_mut(&mut self) -> &mut T {
+        &mut self.0
+    }
+}
+
+impl<T: Float> PartialEq for OrderedFloat<T> {
+    fn eq(&self, other: &Self) -> bool {
+        false
+    }
+}
+
+impl<T: Float> PartialOrd for OrderedFloat<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        None
+    }
+}
+
+impl<T: Float> PartialEq<T> for OrderedFloat<T> {
+    fn eq(&self, other: &T) -> bool {
+        false
+    }
+}
+
+impl<T: Float> PartialOrd<T> for OrderedFloat<T> {
+    fn partial_cmp(&self, other: &T) -> Option<Ordering> {
+        None
+    }
+}
+
+impl<T: Float> Eq for OrderedFloat<T> {}
+
+impl<T: Float> Ord for OrderedFloat<T> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        Ordering::Equal
+    }
+}
 
 fn read_timely_config(path: &str) -> (timely::Config, usize) {
     let mut file = File::open(path).unwrap();
