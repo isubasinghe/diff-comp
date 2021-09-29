@@ -397,23 +397,6 @@ fn main() {
                 output.push((sum, 1));
             });
 
-            paths_by_edge_node_comm.inspect(|(x, _, _)| println!("PATH: {:?}\n", x));
-
-            sigma_total.inspect(|(x, _, _)| println!("SIG_TOT: {:?}\n", x));
-
-            sigma_in.inspect(|(x, _, _)| println!("SIGMA_IN: {:?}\n", x));
-
-            sigma_k_in.inspect(|(x, _, _)| println!("K_i_in: {:?}\n", x));
-
-            k_i.inspect(|(x, _, _)| println!("K_i: {:?}\n", x));
-
-            let aggreg = paths_by_edge_node_comm
-                .join_map(&sigma_in, |n1c, (n1, n2, edge, n2c), sigma_in| {
-                    (*n1c, (*n1, *n2, *edge, *n2c, *sigma_in))
-                });
-
-            aggreg.inspect(|(x, _, _)| println!("AGGREG: {:?}\n", x));
-
             let aggreg = paths_by_edge_node_comm
                 .join_map(&sigma_in, |n1c, (n1, n2, edge, n2c), sigma_in| {
                     // sigma_in is for n1c
