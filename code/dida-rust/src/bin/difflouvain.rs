@@ -18,9 +18,10 @@ use difflouvain_utils::cli;
 use difflouvain_utils::shared::config::TimelyConfig;
 use difflouvain_utils::shared::{CommEdge, Community, Node, ToEdge};
 use num_traits::Float;
-
+use std::collections::{HashMap, HashSet};
 use std::{fs::File, io::Read};
 
+use abomonation_derive::Abomonation;
 // masks for the parts of the IEEE 754 float
 const SIGN_MASK: u64 = 0x8000000000000000u64;
 const EXP_MASK: u64 = 0x7ff0000000000000u64;
@@ -30,7 +31,7 @@ const MAN_MASK: u64 = 0x000fffffffffffffu64;
 const CANONICAL_NAN_BITS: u64 = 0x7ff8000000000000u64;
 const CANONICAL_ZERO_BITS: u64 = 0x0u64;
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, Abomonation)]
 struct OrderedFloat<T>(pub T);
 
 impl<T: Float> OrderedFloat<T> {
@@ -451,18 +452,20 @@ fn main() {
                         let delta_q_p2 =
                             (sigma_in / m) - (sigma_tot / m).powf(2.0) - (k_in / m).powf(2.0);
 
+                        // delta q for moving n2c to n1
                         let delta_q = delta_q_p1 - delta_q_p2;
 
-                        (
-                            (),
-                            (
-                                *n1, *n1c, *edge, *n2, *n2c, sigma_in, sigma_tot, sigma_k_in, k_in,
-                                m, delta_q,
-                            ),
-                        )
+                        ((*n2, *n1c), (*n1, *n1c, *edge, *n2, *n2c, delta_q))
                     },
                 );
 
+            let a = aggreg.map(
+                |((n2, n1c), (n1, _n1c_copy, _edge, _n2_copy, n2c, delta_q))| ((n1, n2c), delta_q),
+            );
+
+            a.join_map(&aggreg, |(k1, k2), v1, v2| ());
+
+            // aggreg.join_map(&a, |key, v1, v2| ());
             aggreg.inspect(|(x, _, _)| println!("{:?}", x));
 
             (node_handle, edge_handle)
