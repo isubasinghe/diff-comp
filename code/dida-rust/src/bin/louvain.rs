@@ -1,6 +1,7 @@
 use difflouvain_utils::shared::{Community, Node, ToEdge};
 use std::collections::{HashMap, HashSet};
 
+#[derive(Debug, Clone, Copy)]
 pub enum Either<L, R> {
     Left(L),
     Right(R),
@@ -14,10 +15,56 @@ pub struct LouvainContext {
     m: u32,
     nodes: HashMap<Node<u32>, Community>,
     edges: Vec<(Node<u32>, ToEdge<u32>)>,
+    node_edges: HashMap<Node<u32>, Vec<ToEdge<u32>>>,
 }
 
 impl LouvainContext {
-    fn iterate() -> Either<LouvainContext, LouvainContext> {
+    fn iterate(&mut self) -> Either<LouvainContext, LouvainContext> {
+        for (node, com) in &self.nodes {
+            let maybe_potential_swaps = self.node_edges.get(node);
+
+            /* let mut best_swap = None;
+            let mut best_edge = None; */
+
+            match maybe_potential_swaps {
+                Some(potential_swaps) => {
+                    let sigma_in = *self.sigma_in.get(com).unwrap_or(&0) as f64;
+
+                    let mut best_score = None;
+                    let mut best_swap = None;
+                    let k_i = *self.k_i.get(node).unwrap_or(&0) as f64;
+
+                    for edge in potential_swaps {
+                        let edge_node = Node { id: edge.to };
+                        let other_comm = match self.nodes.get(&edge_node) {
+                            Some(other_comm) => other_comm,
+                            None => continue,
+                        };
+
+                        let sigma_k_i = match self.sigma_k_i.get(&(*node, *other_comm)) {
+                            Some(e) => *e as f64,
+                            None => continue,
+                        };
+                        let sigma_tot = match self.sigma_tot.get(other_comm) {
+                            Some(e) => *e as f64,
+                            None => continue,
+                        };
+                        let m2 = (2 * self.m) as f64;
+                        let delta_q_p1 =
+                            ((sigma_in + sigma_k_i) / m2) - ((sigma_tot + k_i) / m2).powf(2.0);
+                        let delta_q_p2 =
+                            sigma_in / m2 - (sigma_tot / m2).powf(2.0) - (k_i / m2).powf(2.0);
+                        let delta_q = delta_q_p1 - delta_q_p2;
+
+                        if delta_q > best_score.unwrap_or(0.0) {
+                            best_score = Some(delta_q);
+                            best_swap = Some(edge);
+                        }
+                    }
+                }
+                None => {}
+            }
+        }
         unimplemented!();
     }
 
@@ -37,38 +84,40 @@ fn louvain(
 
     let mut m = 0;
 
-    // let mut nodeedges: HashMap<Node<u32>, Vec<ToEdge<u32>>> = HashMap::new();
+    let mut node_edges: HashMap<Node<u32>, Vec<ToEdge<u32>>> = HashMap::new();
 
     for (node, toedge) in &edges {
-        /* nodeedges
-        .entry(*node)
-        .or_insert(vec![*toedge])
-        .push(*toedge); */
+        node_edges.entry(*node).or_insert(vec![]).push(*toedge);
         m += toedge.weight;
-        match node_comms.get(&node) {
-            Some(com) => {
-                *sigma_k_i
-                    .entry((Node { id: toedge.to }, *com))
-                    .or_insert(toedge.weight) += toedge.weight;
-            }
-            None => {}
-        };
 
-        *k_i.entry(*node).or_insert(toedge.weight) += toedge.weight;
+        *k_i.entry(*node).or_insert(0) += toedge.weight;
 
         let other = Node { id: toedge.to };
+        let other_comm = node_comms.get(&other);
+
+        match other_comm {
+            Some(com) => {
+                *sigma_k_i.entry((*node, *com)).or_insert(0) += toedge.weight;
+            }
+            None => {}
+        }
+
         let com = node_comms.get(&node);
-        if com == node_comms.get(&other) {
+        if com == other_comm {
             match com {
                 Some(com) => {
-                    *sigma_in.entry(*com).or_insert(toedge.weight) += toedge.weight;
+                    if node > &other {
+                        continue;
+                    }
+                    *sigma_in.entry(*com).or_insert(0) += toedge.weight;
                 }
                 None => {}
             }
-        } else {
+        }
+        if com != other_comm && com != None && other_comm != None {
             match com {
                 Some(com) => {
-                    *sigma_tot.entry(*com).or_insert(toedge.weight) += toedge.weight;
+                    *sigma_tot.entry(*com).or_insert(0) += toedge.weight;
                 }
                 None => {}
             }
@@ -85,6 +134,7 @@ fn louvain(
         m,
         nodes: node_comms,
         edges,
+        node_edges,
     }
 }
 
