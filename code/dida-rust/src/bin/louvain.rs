@@ -19,7 +19,7 @@ pub struct LouvainContext {
 }
 
 impl LouvainContext {
-    fn iterate(&mut self) -> Either<LouvainContext, LouvainContext> {
+    fn iterate(&self) {
         for (node, com) in &self.nodes {
             let maybe_potential_swaps = self.node_edges.get(node);
 
@@ -61,11 +61,14 @@ impl LouvainContext {
                             best_swap = Some(edge);
                         }
                     }
+                    println!(
+                        "curr_node: {:?} delta_q: {:?} swap: {:?}",
+                        node, best_score, best_swap
+                    );
                 }
                 None => {}
             }
         }
-        unimplemented!();
     }
 
     fn add_node() {}
@@ -174,5 +177,6 @@ fn main() {
     edges.push((Node { id: 5 }, ToEdge { to: 7, weight: 17 }));
     edges.push((Node { id: 7 }, ToEdge { to: 5, weight: 17 }));
 
-    louvain(node_comms, edges);
+    let lc = louvain(node_comms, edges);
+    lc.iterate();
 }
