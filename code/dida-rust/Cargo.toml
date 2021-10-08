@@ -18,6 +18,8 @@ rdkafka = { version = "0.25", features=["cmake-build"] }
 tokio = { version ="1.11.0", features=["full"] }
 futures = "0.3.17"
 num-traits="0.2.14"
+petgraph = "0.6.0"
+petgraph-graphml = "3.0.0"
 
 [lib]
 name="difflouvain_utils"
