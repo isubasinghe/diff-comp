@@ -1,5 +1,5 @@
 use difflouvain_utils::shared::{Community, Node, ToEdge};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Either<L, R> {
@@ -14,7 +14,7 @@ pub struct LouvainContext {
     k_i: HashMap<Node<u32>, u32>,
     m: u32,
     nodes: HashMap<Node<u32>, Community>,
-    edges: Vec<(Node<u32>, ToEdge<u32>)>,
+    _edges: Vec<(Node<u32>, ToEdge<u32>)>,
     node_edges: HashMap<Node<u32>, Vec<ToEdge<u32>>>,
 }
 
@@ -71,9 +71,9 @@ impl LouvainContext {
         }
     }
 
-    fn add_node() {}
+    /* fn add_node() {}
 
-    fn add_edge() {}
+    fn add_edge() {} */
 }
 
 fn louvain(
@@ -136,7 +136,7 @@ fn louvain(
         k_i,
         m,
         nodes: node_comms,
-        edges,
+        _edges: edges,
         node_edges,
     }
 }

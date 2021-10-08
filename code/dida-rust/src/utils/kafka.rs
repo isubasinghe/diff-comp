@@ -1,4 +1,4 @@
-use futures::future::{self, FutureExt};
+/* use futures::future::{self, FutureExt};
 use futures::stream::StreamExt;
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{Consumer, StreamConsumer};
@@ -49,4 +49,4 @@ pub async fn start_kafka(bootstrap_servers: String, topic: String) {
             None => {}
         }
     }
-}
+} */

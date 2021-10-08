@@ -14,14 +14,14 @@ pub struct Node<G> {
     pub id: G,
 }
 
-impl<G> Node<G>
+/* impl<G> Node<G>
 where
     G: Ord + Copy + Clone,
 {
     fn to_outgoing_edge(&self) -> FromEdge<G> {
         self.unbind().bind()
     }
-}
+} */
 
 impl<G> Bind<Node<G>> for G
 where
@@ -184,11 +184,11 @@ impl Ord for Community {
     }
 }
 
-impl Community {
+/* impl Community {
     fn new(id: u32) -> Community {
         Community { id, weights: 1 }
     }
-}
+} */
 
 #[derive(Debug, Copy, Clone, Hash, Abomonation)]
 pub struct CommEdge<G: Ord + PartialOrd + PartialEq + Eq> {

@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use timely::CommunicationConfig;
 
-
 #[derive(Serialize, Deserialize, Debug)]
 pub enum TimelyConfig {
     Thread,
@@ -14,22 +13,35 @@ pub enum TimelyConfig {
     },
 }
 
-
 impl TimelyConfig {
     pub fn into_timely(self) -> CommunicationConfig {
-
         match self {
             TimelyConfig::Thread => CommunicationConfig::Thread,
             TimelyConfig::Process(process) => CommunicationConfig::Process(process),
-            TimelyConfig::Cluster {threads, process, addresses, report} 
-                => CommunicationConfig::Cluster{threads, process, addresses, report, log_fn: Box::new(|_| None) }
+            TimelyConfig::Cluster {
+                threads,
+                process,
+                addresses,
+                report,
+            } => CommunicationConfig::Cluster {
+                threads,
+                process,
+                addresses,
+                report,
+                log_fn: Box::new(|_| None),
+            },
         }
     }
     pub fn num_peers(&self) -> usize {
         match self {
             TimelyConfig::Thread => 1,
-            TimelyConfig::Process(size) => *size, 
-            TimelyConfig::Cluster {threads, process, addresses, report} => *threads,
+            TimelyConfig::Process(size) => *size,
+            TimelyConfig::Cluster {
+                threads,
+                process: _,
+                addresses: _,
+                report: _,
+            } => *threads,
         }
     }
 }
@@ -38,9 +50,9 @@ pub enum InputConfig {
     File(String),
     Kafka {
         host: String,
-        port: String, 
+        port: String,
         topic: String,
-        password: String, 
+        password: String,
         user: String,
-    }
+    },
 }
