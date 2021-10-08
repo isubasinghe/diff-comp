@@ -374,8 +374,6 @@ fn main() {
             let communities =
                 paths_by_edge_node_comm.filter(|(n1c, (_n1, _n2, _edge, n2c))| n1c != n2c);
 
-            communities.inspect(|(x, _, _)| println!("COMMUNITIES: {:?}", x));
-
             let sigma_total = paths_by_edge_node_comm
                 .filter(|(n1c, (_n1, _n2, _edge, n2c))| n1c != n2c)
                 .reduce(|_key, input, output| {
@@ -460,13 +458,50 @@ fn main() {
                 );
 
             let a = aggreg.map(
-                |((n2, n1c), (n1, _n1c_copy, _edge, _n2_copy, n2c, delta_q))| ((n1, n2c), delta_q),
+                |((_n2, _n1c), (n1, _n1c_copy, _edge, _n2_copy, n2c, delta_q))| {
+                    ((n1, n2c), delta_q)
+                },
             );
 
-            a.join_map(&aggreg, |(k1, k2), v1, v2| ());
+            let tomove = a
+                .join_map(
+                    &aggreg,
+                    |(n2, n1c), delta_q, (n1, _, _, _, n2c, delta_q_1)| {
+                        (*n2, (*n1c, *n1, *n2c, *delta_q, *delta_q_1))
+                    },
+                )
+                .filter(|(_, (n1c, _, n2c, dq, dq1))| {
+                    let b = match dq1.cmp(dq) {
+                        Ordering::Less => false,
+                        Ordering::Equal => n2c < n1c,
+                        Ordering::Greater => true,
+                    };
+                    let b = b && dq1 > &OrderedFloat(0.0);
+                    b
+                });
 
-            // aggreg.join_map(&a, |key, v1, v2| ());
-            aggreg.inspect(|(x, _, _)| println!("{:?}", x));
+            let tomove = tomove.reduce(|_, input, output| {
+                let mut max_score = &OrderedFloat(0.0);
+                let mut best_tups = None;
+                for (tups, _) in input {
+                    let (_n1c, _n1, _n2c, _delta_q, delta_q_1) = tups;
+                    if delta_q_1 > max_score {
+                        best_tups = Some(tups);
+                        max_score = delta_q_1;
+                    }
+                }
+
+                match best_tups {
+                    Some((n1c, n1, n2c, dq, dq1)) => output.push((*n1c, 1)),
+                    None => {}
+                };
+            });
+
+            let changed_nodes = tomove.map(|(k, _)| k);
+
+            let new_nodes = nodes.antijoin(&changed_nodes).concat(&tomove).consolidate();
+
+            new_nodes.inspect(|(x, _, _)| println!("{:?}", x));
 
             (node_handle, edge_handle)
         });
