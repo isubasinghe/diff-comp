@@ -37,9 +37,13 @@ object GraphParser {
       edgeRdd = sc.parallelize(edges.map(e => Edge(e._1, e._2, e._3)))
       vertexRDD = sc.parallelize(nodes)
       graph = Graph(vertexRDD, edgeRdd)
-    } yield()
+    } yield(graph)
 
   }
+}
+
+object Louvain {
+  def iterate(graph: Graph[Long, Long]) = ()
 }
 
 object App extends zio.App {
@@ -52,7 +56,8 @@ object App extends zio.App {
 
   val appLogic =
     for {
-      _ <- GraphParser.parse("./data.txt", sc)
+      either_graph <- GraphParser.parse("./data.txt", sc)
+      graph = either_graph.map(Louvain.iterate)
       _ <- printLine("Hello World")
     } yield()
 

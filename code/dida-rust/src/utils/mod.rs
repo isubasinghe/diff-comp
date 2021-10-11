@@ -6,11 +6,13 @@ use crossbeam::channel::{unbounded, Receiver};
 use std::{
     collections::{HashMap, HashSet},
     fs::File,
-    io::{BufRead, BufReader, Error},
+    io::{BufRead, BufReader, BufWriter, Error, Write},
     thread,
 };
 
 use crate::shared::{Edge, FromEdge, Node, ToEdge};
+use petgraph::graph::{Graph, NodeIndex, UnGraph};
+use petgraph_graphml::GraphMl;
 
 type PipedNode<G> = Option<Node<G>>;
 
@@ -92,4 +94,34 @@ pub fn read_file(
     });
 
     hashmap
+}
+
+pub fn read_file_processing(path: &str, outpath: &str) {
+    let file = File::open(path).expect("unable to open file");
+    let reader = BufReader::new(file);
+
+    let edges = reader.lines().flat_map(|line_res| {
+        let line: Result<Vec<u32>, Error> = line_res.map(|line| {
+            line.split_whitespace()
+                .filter_map(|s| s.parse::<u32>().ok())
+                .collect()
+        });
+        line
+    });
+
+    let mut sanitized_edges = Vec::new();
+
+    for edge in edges {
+        if edge.len() != 2 {
+            continue;
+        }
+        sanitized_edges.push((edge[0], edge[1]));
+    }
+
+    let g = UnGraph::<i32, ()>::from_edges(sanitized_edges);
+    let graphml = GraphMl::new(&g);
+
+    let out_file = File::create(outpath).expect("unable to open file to write");
+    let f = BufWriter::new(out_file);
+    graphml.to_writer(f).unwrap();
 }
