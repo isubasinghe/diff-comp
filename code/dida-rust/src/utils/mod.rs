@@ -6,17 +6,17 @@ use crossbeam::channel::{unbounded, Receiver};
 use std::{
     collections::{HashMap, HashSet},
     fs::File,
-    io::{BufRead, BufReader, BufWriter, Error, Write},
+    io::{BufRead, BufReader, BufWriter, Error},
     thread,
 };
 
-use crate::shared::{Edge, FromEdge, Node, ToEdge};
-use petgraph::graph::{Graph, NodeIndex, UnGraph};
+use crate::shared::{Node, ToEdge};
+use petgraph::graph::UnGraph;
 use petgraph_graphml::GraphMl;
 
 type PipedNode<G> = Option<Node<G>>;
 
-type PipedEdge<G> = Option<Edge<G>>;
+type PipedEdge<G> = Option<(Node<G>, ToEdge<G>)>;
 
 pub fn read_file(
     path: &str,
@@ -73,15 +73,15 @@ pub fn read_file(
                 node_sender.send(Some(node1)).unwrap();
             }
 
-            let edge: Edge<u32> = (
-                FromEdge { from: edge[0] },
+            let myedge = (
+                node1,
                 ToEdge {
-                    to: edge[1],
+                    to: node2.id,
                     weight: 1,
                 },
             );
 
-            edges_sender.send(Some(edge)).unwrap();
+            edges_sender.send(Some(myedge)).unwrap();
 
             i += 1;
         }

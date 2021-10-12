@@ -1,4 +1,5 @@
 use core::cmp::Ordering;
+use crossbeam::select;
 use differential_dataflow::input::Input;
 use differential_dataflow::operators::consolidate::Consolidate;
 use differential_dataflow::operators::join::Join;
@@ -7,6 +8,7 @@ use difflouvain_utils::cli;
 use difflouvain_utils::shared::config::TimelyConfig;
 use difflouvain_utils::shared::{Community, Node, ToEdge};
 use difflouvain_utils::utils::ordered_float::OrderedFloat;
+use difflouvain_utils::utils::read_file;
 use std::{fs::File, io::Read};
 
 fn read_timely_config(path: &str) -> (timely::Config, usize) {
@@ -33,11 +35,15 @@ fn read_timely_config(path: &str) -> (timely::Config, usize) {
 
 fn main() {
     let opts = cli::parse_opts();
-    let (config, _num_peers) = read_timely_config(&opts.timely_config);
+    let (config, num_peers) = read_timely_config(&opts.timely_config);
+
+    let data_map = read_file(&opts.data, num_peers);
 
     timely::execute(config, move |worker| {
-        // let receiver = hashmap.get(&index).unwrap();
-
+        let index = worker.index();
+        let timer = worker.timer();
+        let (node_reader, edge_reader) = data_map.get(&index).unwrap();
+        let mut probe = timely::dataflow::ProbeHandle::new();
         let (mut nodes, mut edges) = worker.dataflow(|scope| {
             let (node_handle, nodes) = scope.new_collection();
             let (edge_handle, edges) = scope.new_collection();
@@ -219,49 +225,70 @@ fn main() {
 
             let changed_nodes = tomove.map(|(k, _)| k);
 
-            let new_nodes = nodes.antijoin(&changed_nodes).concat(&tomove).consolidate();
-
-            new_nodes.inspect(|(x, _, _)| println!("{:?}", x));
+            let _new_nodes = nodes
+                .antijoin(&changed_nodes)
+                .concat(&tomove)
+                .consolidate()
+                .probe_with(&mut probe);
 
             (node_handle, edge_handle)
         });
 
+        let mut fin_node = false;
+        let mut fin_edge = false;
+        loop {
+            if fin_node && fin_edge {
+                break;
+            }
+            if !fin_node {
+                let node = match node_reader.recv() {
+                    Ok(msg) => msg,
+                    Err(_) => {
+                        fin_node = true;
+                        continue;
+                    }
+                };
+                match node {
+                    Some(node) => {
+                        nodes.insert((
+                            node,
+                            Community {
+                                id: node.id,
+                                weights: 1,
+                            },
+                        ));
+                    }
+                    None => {}
+                };
+            }
+
+            if !fin_edge {
+                let edge = match edge_reader.recv() {
+                    Ok(msg) => msg,
+                    Err(_) => {
+                        fin_edge = true;
+                        continue;
+                    }
+                };
+                match edge {
+                    Some(edge) => {
+                        edges.insert(edge);
+                    }
+                    None => {}
+                }
+            }
+        }
         nodes.advance_to(1);
         nodes.flush();
+
         edges.advance_to(1);
         edges.flush();
 
-        nodes.insert((Node { id: 20 }, Community { id: 1, weights: 1 }));
-        nodes.insert((Node { id: 1 }, Community { id: 1, weights: 1 }));
-        nodes.insert((Node { id: 3 }, Community { id: 1, weights: 1 }));
+        while probe.less_than(edges.time()) {
+            worker.step();
+        }
 
-        nodes.insert((Node { id: 2 }, Community { id: 2, weights: 1 }));
-
-        edges.insert((Node { id: 1 }, ToEdge { to: 3, weight: 5 }));
-        edges.insert((Node { id: 3 }, ToEdge { to: 1, weight: 5 }));
-
-        edges.insert((Node { id: 3 }, ToEdge { to: 2, weight: 7 }));
-        edges.insert((Node { id: 2 }, ToEdge { to: 3, weight: 7 }));
-
-        edges.insert((Node { id: 1 }, ToEdge { to: 20, weight: 11 }));
-        edges.insert(((Node { id: 20 }), ToEdge { to: 1, weight: 11 }));
-
-        nodes.insert((Node { id: 5 }, Community { id: 5, weights: 1 }));
-        nodes.insert((Node { id: 6 }, Community { id: 5, weights: 1 }));
-        nodes.insert((Node { id: 7 }, Community { id: 5, weights: 1 }));
-        nodes.insert((Node { id: 8 }, Community { id: 5, weights: 1 }));
-
-        edges.insert((Node { id: 5 }, ToEdge { to: 6, weight: 13 }));
-        edges.insert((Node { id: 6 }, ToEdge { to: 5, weight: 13 }));
-
-        edges.insert((Node { id: 5 }, ToEdge { to: 1, weight: 1 }));
-        edges.insert((Node { id: 1 }, ToEdge { to: 5, weight: 1 }));
-
-        edges.insert((Node { id: 8 }, ToEdge { to: 20, weight: 23 }));
-        edges.insert((Node { id: 20 }, ToEdge { to: 8, weight: 23 }));
-
-        edges.insert((Node { id: 5 }, ToEdge { to: 7, weight: 17 }));
-        edges.insert((Node { id: 7 }, ToEdge { to: 5, weight: 17 }));
+        println!("Computation stable in {:?}", timer.elapsed());
     })
     .expect("timely failed to start");
 }
