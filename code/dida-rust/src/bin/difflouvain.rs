@@ -1,5 +1,4 @@
 use core::cmp::Ordering;
-use crossbeam::select;
 use differential_dataflow::input::Input;
 use differential_dataflow::operators::consolidate::Consolidate;
 use differential_dataflow::operators::join::Join;
@@ -9,6 +8,8 @@ use difflouvain_utils::shared::config::TimelyConfig;
 use difflouvain_utils::shared::{Community, Node, ToEdge};
 use difflouvain_utils::utils::ordered_float::OrderedFloat;
 use difflouvain_utils::utils::read_file;
+use std::io::{self, BufRead};
+use std::time::{Duration, Instant};
 use std::{fs::File, io::Read};
 
 fn read_timely_config(path: &str) -> (timely::Config, usize) {
@@ -273,6 +274,12 @@ fn main() {
                 match edge {
                     Some(edge) => {
                         edges.insert(edge);
+                        let flipped_node = Node { id: edge.1.to };
+                        let flipped_edge = ToEdge {
+                            to: edge.0.id,
+                            weight: edge.1.weight,
+                        };
+                        edges.insert((flipped_node, flipped_edge));
                     }
                     None => {}
                 }
@@ -287,8 +294,74 @@ fn main() {
         while probe.less_than(edges.time()) {
             worker.step();
         }
-
         println!("Computation stable in {:?}", timer.elapsed());
+        if index == 0 {
+            let mut time = 2;
+            // let parse_command = |s| {};
+            let stdio = io::stdin();
+            let mut iter = stdio.lock().lines();
+            loop {
+                println!("e: edit q: quit");
+                let line = match iter.next() {
+                    Some(res) => match res {
+                        Ok(r) => r,
+                        Err(_) => continue,
+                    },
+                    None => continue,
+                };
+                match line.as_str() {
+                    "e" => {
+                        let line = match iter.next() {
+                            Some(res) => match res {
+                                Ok(r) => r,
+                                Err(_) => continue,
+                            },
+                            None => continue,
+                        };
+                        let edgesvec: Vec<_> = line
+                            .split_whitespace()
+                            .flat_map(|s| s.parse::<u32>())
+                            .collect();
+                        if edgesvec.len() != 3 {
+                            println!("Only three edges can be accepted");
+                            continue;
+                        }
+                        let edge1 = (
+                            Node { id: edgesvec[0] },
+                            ToEdge {
+                                to: edgesvec[1],
+                                weight: edgesvec[2],
+                            },
+                        );
+                        let edge2 = (
+                            Node { id: edgesvec[1] },
+                            ToEdge {
+                                to: edgesvec[0],
+                                weight: edgesvec[2],
+                            },
+                        );
+
+                        println!("Inserted {:?} and {:?}", edge1, edge2);
+
+                        edges.insert(edge1);
+                        edges.insert(edge2);
+
+                        nodes.advance_to(time);
+                        nodes.flush();
+                        edges.advance_to(time);
+                        edges.flush();
+                        let start = Instant::now();
+                        while probe.less_than(edges.time()) {
+                            worker.step();
+                        }
+                        println!("Computation stable in {:?}", start.elapsed());
+                        time += 1;
+                    }
+                    "q" => break,
+                    _ => continue,
+                }
+            }
+        }
     })
     .expect("timely failed to start");
 }
