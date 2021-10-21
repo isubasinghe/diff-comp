@@ -1,5 +1,15 @@
 use difflouvain_utils::shared::{Community, Node, ToEdge};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::ops::Bound::Included;
+
+macro_rules! somec {
+    ($x: expr) => {
+        match $x {
+            Some(res) => res,
+            None => continue,
+        }
+    };
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum Either<L, R> {
@@ -14,60 +24,74 @@ pub struct LouvainContext {
     k_i: HashMap<Node<u32>, u32>,
     m: u32,
     nodes: HashMap<Node<u32>, Community>,
-    _edges: Vec<(Node<u32>, ToEdge<u32>)>,
-    node_edges: HashMap<Node<u32>, Vec<ToEdge<u32>>>,
+    edges: BTreeMap<Node<u32>, ToEdge<u32>>,
 }
 
 impl LouvainContext {
-    fn iterate(&self) {
-        for (node, com) in &self.nodes {
-            let maybe_potential_swaps = self.node_edges.get(node);
+    fn iterate(&mut self) {
+        let mut new_nodes = Vec::new();
 
-            /* let mut best_swap = None;
-            let mut best_edge = None; */
-
-            match maybe_potential_swaps {
-                Some(potential_swaps) => {
-                    let sigma_in = *self.sigma_in.get(com).unwrap_or(&0) as f64;
-
-                    let mut best_score = None;
-                    let mut best_swap = None;
-                    let k_i = *self.k_i.get(node).unwrap_or(&0) as f64;
-
-                    for edge in potential_swaps {
-                        let edge_node = Node { id: edge.to };
-                        let other_comm = match self.nodes.get(&edge_node) {
-                            Some(other_comm) => other_comm,
-                            None => continue,
-                        };
-
-                        let sigma_k_i = match self.sigma_k_i.get(&(*node, *other_comm)) {
-                            Some(e) => *e as f64,
-                            None => continue,
-                        };
-                        let sigma_tot = match self.sigma_tot.get(other_comm) {
-                            Some(e) => *e as f64,
-                            None => continue,
-                        };
-                        let m2 = (2 * self.m) as f64;
-                        let delta_q_p1 =
-                            ((sigma_in + sigma_k_i) / m2) - ((sigma_tot + k_i) / m2).powf(2.0);
-                        let delta_q_p2 =
-                            sigma_in / m2 - (sigma_tot / m2).powf(2.0) - (k_i / m2).powf(2.0);
-                        let delta_q = delta_q_p1 - delta_q_p2;
-
-                        if delta_q > best_score.unwrap_or(0.0) {
-                            best_score = Some(delta_q);
-                            best_swap = Some(edge);
+        for (node, old_comm) in &self.nodes {
+            let mut delta_q: Option<f64> = None;
+            let mut best_community = None;
+            for (_, toedge) in self.edges.range((Included(node), Included(node))) {
+                let next_comm = somec!(self.nodes.get(&Node { id: toedge.to }));
+                let sigma_in = (*somec!(self.sigma_in.get(next_comm))) as f64;
+                let sigma_k_i = (*somec!(self.sigma_k_i.get(&(*node, *next_comm)))) as f64;
+                let sigma_tot = (*somec!(self.sigma_tot.get(next_comm))) as f64;
+                let k_i = (*somec!(self.k_i.get(node))) as f64;
+                let m = self.m as f64;
+                let part1 =
+                    (sigma_in + sigma_k_i) / (m * 2.0) + ((sigma_tot + k_i) / (2.0 * m)).powf(2.0);
+                let part2 = (sigma_in / (2.0 * m)) + (sigma_tot / 2.0 * m).powf(2.0)
+                    - (k_i / (2.0 * m)).powf(2.0);
+                let curr_delta_q = part1 - part2;
+                match delta_q {
+                    Some(inner_delta_q) => {
+                        if curr_delta_q > inner_delta_q {
+                            delta_q = Some(curr_delta_q);
+                            best_community = Some(next_comm);
                         }
                     }
-                    println!(
-                        "curr_node: {:?} delta_q: {:?} swap: {:?}",
-                        node, best_score, best_swap
-                    );
-                }
-                None => {}
+                    None => {
+                        delta_q = Some(curr_delta_q);
+                        best_community = Some(next_comm);
+                    }
+                };
             }
+
+            let delta_q = somec!(delta_q);
+            let comm = somec!(best_community);
+            if delta_q <= 0.0 || comm == old_comm {
+                continue;
+            }
+            new_nodes.push((*node, *comm));
+
+            for (_, toedge) in self.edges.range((Included(node), Included(node))) {
+                let other_comm = somec!(self.nodes.get(&Node { id: toedge.to }));
+                if other_comm == old_comm {
+                    *self.sigma_in.entry(*old_comm).or_insert(0) -= toedge.weight;
+                } else {
+                    *self.sigma_tot.entry(*old_comm).or_insert(0) -= toedge.weight;
+                }
+                if other_comm == comm {
+                    *self.sigma_in.entry(*comm).or_insert(0) += toedge.weight;
+                } else {
+                    *self.sigma_tot.entry(*comm).or_insert(0) += toedge.weight;
+                }
+                *self
+                    .sigma_k_i
+                    .entry((Node { id: toedge.to }, *old_comm))
+                    .or_insert(0) -= toedge.weight;
+                *self
+                    .sigma_k_i
+                    .entry((Node { id: toedge.to }, *comm))
+                    .or_insert(0) += toedge.weight;
+            }
+        }
+
+        for (node, comm) in new_nodes {
+            *self.nodes.entry(node).or_insert(comm) = comm;
         }
     }
 
@@ -87,10 +111,10 @@ fn louvain(
 
     let mut m = 0;
 
-    let mut node_edges: HashMap<Node<u32>, Vec<ToEdge<u32>>> = HashMap::new();
+    let mut indexed_edges = BTreeMap::new();
 
     for (node, toedge) in &edges {
-        node_edges.entry(*node).or_insert(vec![]).push(*toedge);
+        indexed_edges.insert(*node, *toedge);
         m += toedge.weight;
 
         *k_i.entry(*node).or_insert(0) += toedge.weight;
@@ -136,8 +160,7 @@ fn louvain(
         k_i,
         m,
         nodes: node_comms,
-        _edges: edges,
-        node_edges,
+        edges: indexed_edges,
     }
 }
 
@@ -177,6 +200,6 @@ fn main() {
     edges.push((Node { id: 5 }, ToEdge { to: 7, weight: 17 }));
     edges.push((Node { id: 7 }, ToEdge { to: 5, weight: 17 }));
 
-    let lc = louvain(node_comms, edges);
+    let mut lc = louvain(node_comms, edges);
     lc.iterate();
 }
