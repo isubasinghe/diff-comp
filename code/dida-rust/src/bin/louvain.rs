@@ -1,7 +1,8 @@
 use difflouvain_utils::shared::{Community, Node, ToEdge};
+use difflouvain_utils::utils::read_file;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Bound::Included;
-
+use std::time::Instant;
 macro_rules! somec {
     ($x: expr) => {
         match $x {
@@ -9,6 +10,30 @@ macro_rules! somec {
             None => continue,
         }
     };
+}
+
+fn modularity(
+    nodes: &HashMap<Node<u32>, Community>,
+    edges: &BTreeMap<Node<u32>, ToEdge<u32>>,
+    m: u32,
+) -> f64 {
+    let m = m as f64;
+    let mut q = 0.0;
+    let mut k_n = HashMap::new();
+    for (node, edge) in edges {
+        *k_n.entry(node).or_insert(0) += edge.weight;
+    }
+    for (node, edge) in edges {
+        let comm = somec!(nodes.get(node));
+        let other_comm = somec!(nodes.get(&Node { id: edge.to }));
+        if comm != other_comm {
+            continue;
+        }
+        let k_i = *somec!(k_n.get(node)) as f64;
+        let k_j = *somec!(k_n.get(&Node { id: edge.to })) as f64;
+        q += (edge.weight as f64) - (k_i * k_j) / (2.0 * m);
+    }
+    q / (2.0 * m)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -28,6 +53,13 @@ pub struct LouvainContext {
 }
 
 impl LouvainContext {
+    fn print_modularity(&self) {
+        let q = modularity(&self.nodes, &self.edges, self.m);
+        println!("Modularity {}", q);
+    }
+    fn modularity(&self) -> f64 {
+        modularity(&self.nodes, &self.edges, self.m)
+    }
     fn iterate(&mut self) {
         let mut new_nodes = Vec::new();
 
@@ -43,7 +75,8 @@ impl LouvainContext {
                 let m = self.m as f64;
                 let part1 =
                     (sigma_in + sigma_k_i) / (m * 2.0) + ((sigma_tot + k_i) / (2.0 * m)).powf(2.0);
-                let part2 = (sigma_in / (2.0 * m)) + (sigma_tot / 2.0 * m).powf(2.0)
+                let part2 = (sigma_in / (2.0 * m))
+                    - (sigma_tot / (2.0 * m)).powf(2.0)
                     - (k_i / (2.0 * m)).powf(2.0);
                 let curr_delta_q = part1 - part2;
                 match delta_q {
@@ -60,11 +93,15 @@ impl LouvainContext {
                 };
             }
 
+            println!("{:?}", delta_q);
+
             let delta_q = somec!(delta_q);
             let comm = somec!(best_community);
             if delta_q <= 0.0 || comm == old_comm {
                 continue;
             }
+
+            println!("{}", delta_q);
             new_nodes.push((*node, *comm));
 
             for (_, toedge) in self.edges.range((Included(node), Included(node))) {
@@ -94,10 +131,6 @@ impl LouvainContext {
             *self.nodes.entry(node).or_insert(comm) = comm;
         }
     }
-
-    /* fn add_node() {}
-
-    fn add_edge() {} */
 }
 
 fn louvain(
@@ -165,41 +198,65 @@ fn louvain(
 }
 
 fn main() {
-    let mut node_comms: HashMap<Node<u32>, Community> = HashMap::new();
+    let mut nodes: HashMap<Node<u32>, Community> = HashMap::new();
     let mut edges: Vec<(Node<u32>, ToEdge<u32>)> = Vec::new();
 
-    node_comms.insert(Node { id: 20 }, Community { id: 1, weights: 1 });
-    node_comms.insert(Node { id: 1 }, Community { id: 1, weights: 1 });
-    node_comms.insert(Node { id: 3 }, Community { id: 1, weights: 1 });
+    let file = std::env::args().nth(1).expect("file needed");
 
-    node_comms.insert(Node { id: 2 }, Community { id: 2, weights: 1 });
+    let data_map = read_file(&file, 1);
 
-    edges.push((Node { id: 1 }, ToEdge { to: 3, weight: 5 }));
-    edges.push((Node { id: 3 }, ToEdge { to: 1, weight: 5 }));
+    let (node_reader, edge_reader) = data_map.get(&0).unwrap();
+    let mut fin_node = false;
+    let mut fin_edge = false;
+    loop {
+        if fin_node && fin_edge {
+            break;
+        }
+        if !fin_node {
+            let node = match node_reader.recv() {
+                Ok(msg) => msg,
+                Err(_) => {
+                    fin_node = true;
+                    continue;
+                }
+            };
+            match node {
+                Some(node) => {
+                    nodes.insert(
+                        node,
+                        Community {
+                            id: node.id,
+                            weights: 1,
+                        },
+                    );
+                }
+                None => {}
+            };
+        }
 
-    edges.push((Node { id: 3 }, ToEdge { to: 2, weight: 7 }));
-    edges.push((Node { id: 2 }, ToEdge { to: 3, weight: 7 }));
-
-    edges.push((Node { id: 1 }, ToEdge { to: 20, weight: 11 }));
-    edges.push(((Node { id: 20 }), ToEdge { to: 1, weight: 11 }));
-
-    node_comms.insert(Node { id: 5 }, Community { id: 5, weights: 1 });
-    node_comms.insert(Node { id: 6 }, Community { id: 5, weights: 1 });
-    node_comms.insert(Node { id: 7 }, Community { id: 5, weights: 1 });
-    node_comms.insert(Node { id: 8 }, Community { id: 5, weights: 1 });
-
-    edges.push((Node { id: 5 }, ToEdge { to: 6, weight: 13 }));
-    edges.push((Node { id: 6 }, ToEdge { to: 5, weight: 13 }));
-
-    edges.push((Node { id: 5 }, ToEdge { to: 1, weight: 1 }));
-    edges.push((Node { id: 1 }, ToEdge { to: 5, weight: 1 }));
-
-    edges.push((Node { id: 8 }, ToEdge { to: 20, weight: 23 }));
-    edges.push((Node { id: 20 }, ToEdge { to: 8, weight: 23 }));
-
-    edges.push((Node { id: 5 }, ToEdge { to: 7, weight: 17 }));
-    edges.push((Node { id: 7 }, ToEdge { to: 5, weight: 17 }));
-
-    let mut lc = louvain(node_comms, edges);
+        if !fin_edge {
+            let edge = match edge_reader.recv() {
+                Ok(msg) => msg,
+                Err(_) => {
+                    fin_edge = true;
+                    continue;
+                }
+            };
+            match edge {
+                Some(edge) => {
+                    edges.push(edge);
+                    let flipped_node = Node { id: edge.1.to };
+                    let flipped_edge = ToEdge {
+                        to: edge.0.id,
+                        weight: edge.1.weight,
+                    };
+                    edges.push((flipped_node, flipped_edge));
+                }
+                None => {}
+            }
+        }
+    }
+    println!("LOADED {:?} NODES AND {:?} EDGES", nodes.len(), edges.len());
+    let mut lc = louvain(nodes, edges);
     lc.iterate();
 }
