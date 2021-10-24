@@ -1,13 +1,27 @@
 use difflouvain_utils::shared::{Community, Node, ToEdge};
 use difflouvain_utils::utils::read_file;
-use std::collections::{BTreeMap, HashMap};
+use petgraph::graph::{NodeIndex, UnGraph};
+use petgraph::visit::EdgeRef;
+use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::ops::Bound::Included;
 use std::time::Instant;
+
 macro_rules! somec {
     ($x: expr) => {
         match $x {
             Some(res) => res,
             None => continue,
+        }
+    };
+}
+
+macro_rules! somez {
+    ($x: expr) => {
+        match $x {
+            Some(res) => res,
+            None => &0,
         }
     };
 }
@@ -42,6 +56,127 @@ pub enum Either<L, R> {
     Right(R),
 }
 
+pub fn read_file_h(path: &str) -> (HashMap<Node<u32>, Community>, Vec<(Node<u32>, ToEdge<u32>)>) {
+    let mut nodes = HashMap::new();
+    let mut redges = Vec::new();
+    let file = File::open(path).expect("unable to open file");
+    let reader = BufReader::new(file);
+
+    let edges = reader.lines().flat_map(|line_res| {
+        let line: Result<Vec<u32>, _> = line_res.map(|line| {
+            line.split_whitespace()
+                .filter_map(|s| s.parse::<u32>().ok())
+                .collect()
+        });
+        line
+    });
+
+    for edge in edges {
+        // 2 is the number of nodes we expect on a line
+        // obviously
+        if edge.len() != 2 {
+            panic!("Invalid number of edges {}", edge.len());
+        }
+        let node1 = Node { id: edge[0] };
+
+        let node2 = Node { id: edge[1] };
+
+        let myedge = (
+            node1,
+            ToEdge {
+                to: node2.id,
+                weight: 1,
+            },
+        );
+
+        let flipped_edge = (
+            node2,
+            ToEdge {
+                to: node1.id,
+                weight: 1,
+            },
+        );
+
+        nodes.insert(
+            node1,
+            Community {
+                id: node1.id,
+                weights: 1,
+            },
+        );
+        nodes.insert(
+            node2,
+            Community {
+                id: node2.id,
+                weights: 1,
+            },
+        );
+        redges.push(myedge);
+        redges.push(flipped_edge);
+    }
+    (nodes, redges)
+}
+
+#[derive(Debug, Default, Hash, PartialEq, Eq, Copy, Clone)]
+pub struct LouvainNode<N, G>
+where
+    N: Ord + Eq + PartialEq + PartialOrd,
+    G: Ord + Eq + PartialEq + PartialOrd,
+{
+    id: N,
+    community: G,
+}
+
+pub fn read_file_petgraph(path: &str) -> UnGraph<LouvainNode<u32, u32>, u32> {
+    let file = File::open(path).expect("unable to open file");
+    let reader = BufReader::new(file);
+    let mut nodes = HashMap::new();
+    let edges = reader.lines().flat_map(|line_res| {
+        let line: Result<Vec<u32>, _> = line_res.map(|line| {
+            line.split_whitespace()
+                .filter_map(|s| s.parse::<u32>().ok())
+                .collect()
+        });
+        line
+    });
+
+    let mut g = UnGraph::<LouvainNode<u32, u32>, u32>::new_undirected();
+
+    for edge in edges {
+        // 2 is the number of nodes we expect on a line
+        // obviously
+        if edge.len() != 2 {
+            panic!("Invalid number of edges {}", edge.len());
+        }
+        let node = LouvainNode {
+            id: edge[0],
+            community: edge[0],
+        };
+        let other_node = LouvainNode {
+            id: edge[1],
+            community: edge[1],
+        };
+        let node_idx = match nodes.get(&node) {
+            Some(idx) => *idx,
+            None => {
+                let idx = g.add_node(node);
+                nodes.insert(node, idx);
+                idx
+            }
+        };
+        let other_node_idx = match nodes.get(&other_node) {
+            Some(idx) => *idx,
+            None => {
+                let idx = g.add_node(other_node);
+                nodes.insert(other_node, idx);
+                idx
+            }
+        };
+        g.add_edge(node_idx, other_node_idx, 1);
+    }
+    g
+}
+
 pub struct LouvainContext {
     sigma_in: HashMap<Community, u32>,
     sigma_k_i: HashMap<(Node<u32>, Community), u32>,
@@ -62,16 +197,18 @@ impl LouvainContext {
     }
     fn iterate(&mut self) {
         let mut new_nodes = Vec::new();
-
+        let mut i = 0;
         for (node, old_comm) in &self.nodes {
             let mut delta_q: Option<f64> = None;
             let mut best_community = None;
+            let mut best_edge = None;
+
             for (_, toedge) in self.edges.range((Included(node), Included(node))) {
-                let next_comm = somec!(self.nodes.get(&Node { id: toedge.to }));
-                let sigma_in = (*somec!(self.sigma_in.get(next_comm))) as f64;
-                let sigma_k_i = (*somec!(self.sigma_k_i.get(&(*node, *next_comm)))) as f64;
-                let sigma_tot = (*somec!(self.sigma_tot.get(next_comm))) as f64;
-                let k_i = (*somec!(self.k_i.get(node))) as f64;
+                let next_comm = self.nodes.get(&Node { id: toedge.to }).unwrap();
+                let sigma_in = (*somez!(self.sigma_in.get(next_comm))) as f64;
+                let sigma_k_i = (*somez!(self.sigma_k_i.get(&(*node, *next_comm)))) as f64;
+                let sigma_tot = (*somez!(self.sigma_tot.get(next_comm))) as f64;
+                let k_i = (*somez!(self.k_i.get(node))) as f64;
                 let m = self.m as f64;
                 let part1 =
                     (sigma_in + sigma_k_i) / (m * 2.0) + ((sigma_tot + k_i) / (2.0 * m)).powf(2.0);
@@ -79,43 +216,39 @@ impl LouvainContext {
                     - (sigma_tot / (2.0 * m)).powf(2.0)
                     - (k_i / (2.0 * m)).powf(2.0);
                 let curr_delta_q = part1 - part2;
+
                 match delta_q {
                     Some(inner_delta_q) => {
                         if curr_delta_q > inner_delta_q {
                             delta_q = Some(curr_delta_q);
                             best_community = Some(next_comm);
+                            best_edge = Some(toedge);
                         }
                     }
                     None => {
                         delta_q = Some(curr_delta_q);
                         best_community = Some(next_comm);
+                        best_edge = Some(toedge);
                     }
                 };
             }
-
-            println!("{:?}", delta_q);
 
             let delta_q = somec!(delta_q);
             let comm = somec!(best_community);
             if delta_q <= 0.0 || comm == old_comm {
                 continue;
             }
+            let best_edge = best_edge.unwrap();
 
-            println!("{}", delta_q);
             new_nodes.push((*node, *comm));
 
+            // *self.sigma_in.entry(*old_comm).or_insert(0) -= best_edge.weight;
+            // *self.sigma_tot.entry(*old_comm).or_insert(0) += best_edge.weight;
+
+            // *self.sigma_in.entry(*comm).or_insert(0) += best_edge.weight;
+            // *self.sigma_tot.entry(*comm).or_insert(0) -= best_edge.weight;
+
             for (_, toedge) in self.edges.range((Included(node), Included(node))) {
-                let other_comm = somec!(self.nodes.get(&Node { id: toedge.to }));
-                if other_comm == old_comm {
-                    *self.sigma_in.entry(*old_comm).or_insert(0) -= toedge.weight;
-                } else {
-                    *self.sigma_tot.entry(*old_comm).or_insert(0) -= toedge.weight;
-                }
-                if other_comm == comm {
-                    *self.sigma_in.entry(*comm).or_insert(0) += toedge.weight;
-                } else {
-                    *self.sigma_tot.entry(*comm).or_insert(0) += toedge.weight;
-                }
                 *self
                     .sigma_k_i
                     .entry((Node { id: toedge.to }, *old_comm))
@@ -198,65 +331,13 @@ fn louvain(
 }
 
 fn main() {
-    let mut nodes: HashMap<Node<u32>, Community> = HashMap::new();
-    let mut edges: Vec<(Node<u32>, ToEdge<u32>)> = Vec::new();
-
     let file = std::env::args().nth(1).expect("file needed");
+    let (nodes, edges) = read_file_h(&file);
 
-    let data_map = read_file(&file, 1);
-
-    let (node_reader, edge_reader) = data_map.get(&0).unwrap();
-    let mut fin_node = false;
-    let mut fin_edge = false;
-    loop {
-        if fin_node && fin_edge {
-            break;
-        }
-        if !fin_node {
-            let node = match node_reader.recv() {
-                Ok(msg) => msg,
-                Err(_) => {
-                    fin_node = true;
-                    continue;
-                }
-            };
-            match node {
-                Some(node) => {
-                    nodes.insert(
-                        node,
-                        Community {
-                            id: node.id,
-                            weights: 1,
-                        },
-                    );
-                }
-                None => {}
-            };
-        }
-
-        if !fin_edge {
-            let edge = match edge_reader.recv() {
-                Ok(msg) => msg,
-                Err(_) => {
-                    fin_edge = true;
-                    continue;
-                }
-            };
-            match edge {
-                Some(edge) => {
-                    edges.push(edge);
-                    let flipped_node = Node { id: edge.1.to };
-                    let flipped_edge = ToEdge {
-                        to: edge.0.id,
-                        weight: edge.1.weight,
-                    };
-                    edges.push((flipped_node, flipped_edge));
-                }
-                None => {}
-            }
-        }
-    }
     println!("LOADED {:?} NODES AND {:?} EDGES", nodes.len(), edges.len());
     let mut lc = louvain(nodes, edges);
+    let start = Instant::now();
+    lc.print_modularity();
     lc.iterate();
+    println!("COMPUTED IN {:?}", start.elapsed());
 }
