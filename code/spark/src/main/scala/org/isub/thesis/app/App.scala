@@ -16,6 +16,17 @@ import cats._
 import scalaz._
 import Scalaz._
 
+class VertexState extends Serializable {
+  var community = -1L
+  var communitySigmaTot = 0L
+  var internalWeight = 0L
+  var nodeWeight = 0L
+  var changed = false
+
+  override def toString(): String = {
+    "{community:" + community + ",communitySigmaTot:"+communitySigmaTot+",internalWeight:"+internalWeight+",nodeWeight:"+nodeWeight+"}"
+  }
+}
 
 object GraphParser {
   def splitString(file: String): Either[String, (Long, Long, Long)] = {
@@ -27,13 +38,12 @@ object GraphParser {
       return Left("Need exactly 2 nodes per line")
     }
   }
-
   def parse(file: String, sc: SparkContext) =  zio.IO {
     // Either[Error, (NodeID, NodeID, Weight)]
 
     for {
       edges <- Source.fromFile(file).getLines().map(splitString).toList.sequence
-      nodes = edges.flatMap(y => List( (y._1, y._1) , (y._2, y._2))).toSet.toList
+      nodes = edges.flatMap(y => List( (y._1, y._2))).toSet.toList
       edgeRdd = sc.parallelize(edges.map(e => Edge(e._1, e._2, e._3)))
       vertexRDD = sc.parallelize(nodes)
       graph = Graph(vertexRDD, edgeRdd)
@@ -43,7 +53,45 @@ object GraphParser {
 }
 
 object Louvain {
-  def iterate(graph: Graph[Long, Long]) = ()
+  private def sendMsg(ec: EdgeContext[VertexState, Long, Map[(Long, Long), Long]]) = {
+
+    val m1 = Map((ec.srcAttr.community,ec.srcAttr.communitySigmaTot)->ec.attr)
+    val m2 = Map((ec.dstAttr.community, ec.dstAttr.communitySigmaTot)->ec.attr)
+    ec.sendToSrc(m2)
+    ec.sendToDst(m1)
+  }
+  private def mergeMsg(m1: Map[(Long, Long), Long], m2: Map[(Long, Long), Long]) = {
+    val newMap = scala.collection.mutable.HashMap[(Long, Long), Long]()
+    m1.foreach({case (k,v)=>
+      if (newMap.contains(k)) newMap(k) = newMap(k) + v
+      else newMap(k) = v
+    })
+  }
+  def toLouvainGraph(graph: Graph[Long, Long]): Graph[VertexState, Long] = {
+    val nodeWeightMapFunc = (triplet: EdgeContext[Long, Long, Long]) => { 
+      triplet.sendToSrc(triplet.attr)
+      triplet.sendToDst(triplet.attr)
+    }
+    val nodeWeightReduceFunc = (e1: Long, e2: Long) => e1 + e2
+    val nodeWeights = graph.aggregateMessages(nodeWeightMapFunc, nodeWeightReduceFunc)
+    val louvainGraph = graph.outerJoinVertices(nodeWeights)((vid, data, weightOption) => {
+      val weight:Long = weightOption.getOrElse(0)
+      val state = new VertexState()
+      state.community = vid
+      state.changed = false
+      state.communitySigmaTot = weight
+      state.internalWeight = 0L
+      state.nodeWeight = weight
+      state
+    }).partitionBy(PartitionStrategy.EdgePartition2D).groupEdges(_+_)
+    louvainGraph 
+  }
+  def iterate(graph: Graph[VertexState, Long]) = {
+    var louvainGraph = graph.cache()
+    val graphWeight = louvainGraph.vertices.values.map(vdata => vdata.internalWeight+vdata.nodeWeight).reduce(_+_)
+     
+    ()
+  }
 }
 
 object App extends zio.App {
@@ -57,7 +105,6 @@ object App extends zio.App {
   val appLogic =
     for {
       either_graph <- GraphParser.parse("./data.txt", sc)
-      graph = either_graph.map(Louvain.iterate)
       _ <- printLine("Hello World")
     } yield()
 
