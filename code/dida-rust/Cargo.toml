@@ -20,6 +20,7 @@ futures = "0.3.17"
 num-traits="0.2.14"
 petgraph = "0.6.0"
 petgraph-graphml = "3.0.0"
+pprof = {version="0.6.0", features=["flamegraph"]}
 
 [lib]
 name="difflouvain_utils"

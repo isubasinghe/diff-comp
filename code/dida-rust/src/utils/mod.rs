@@ -70,7 +70,7 @@ pub fn read_file(
             let node2 = Node { id: edge[1] };
             if !node_set.contains(&node2) {
                 node_set.insert(node2);
-                node_sender.send(Some(node1)).unwrap();
+                node_sender.send(Some(node2)).unwrap();
             }
 
             let myedge = (
