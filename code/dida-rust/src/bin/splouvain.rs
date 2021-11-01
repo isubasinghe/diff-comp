@@ -20,9 +20,22 @@ use std::ops::AddAssign;
 use std::ops::Mul;
 use std::sync::{atomic::AtomicIsize, Arc};
 use std::time::{Duration, Instant};
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{fs::File, io::Read};
-use timely::dataflow::Scope;
-use timely::order::Product;
+
+#[macro_use]
+extern crate lazy_static;
+
+lazy_static! {
+    static ref START_TIME: Instant = Instant::now();
+}
+
+lazy_static! {
+    static ref END_TIME: u128 = {
+        let opts = cli::parse_opts();
+        opts.run_time
+    };
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Hash, Debug, Abomonation)]
 struct VertexState {
@@ -30,7 +43,6 @@ struct VertexState {
     community_sigma_tot: u64,
     internal_weight: u64,
     node_weight: u64,
-    changed: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Hash, Debug, Abomonation)]
@@ -154,7 +166,6 @@ fn main() {
                     community_sigma_tot: *cost as u64,
                     internal_weight: 0,
                     node_weight: *cost as u64,
-                    changed: false,
                 };
                 (*vid, vstate)
             });
@@ -166,8 +177,8 @@ fn main() {
 
             let louvain = louvain.join_core(&ms, |vid, vstate, m| Some((*vid, (*vstate, *m))));
 
-            let clustered_louvain = louvain.iterate(|transitive| {
-                let louvain = louvain.enter(&transitive.scope());
+            let louvain = louvain.iterate(|transitive| {
+                let louvain = transitive;
                 let edges = edges.enter(&transitive.scope());
 
                 let flouvain = louvain.map(|(vid, (vstate, m))| (vid, (vstate, m)));
@@ -189,45 +200,97 @@ fn main() {
                     Some(((*vid, *vstate), (*comm, *stot, *cost, *m)))
                 });
 
-                let new_louvain = eval.reduce(|(_vid, vstate), input, output| {
-                    let mut best_comm = vstate.community;
-                    let mut starting_comm = best_comm;
-                    let mut best_delta_q = 0.0;
-                    let mut best_sigma_tot = 0;
-                    let mut mym = 1;
+                let louvain = eval
+                    .reduce(|(vid, vstate), input, output| {
+                        let time_diff = START_TIME.elapsed().as_millis();
+                        let even = time_diff % 2 == 0;
+                        let mut best_comm = vstate.community;
+                        let starting_comm = best_comm;
+                        let mut best_delta_q = 0.0;
+                        let mut best_sigma_tot = 0;
+                        let mut mym = 1;
 
-                    for ((comm, stot, cost, m), _) in input {
-                        mym = *m;
-                        let delta_q = q(
-                            starting_comm,
-                            *comm,
-                            *stot,
-                            *cost as u64,
-                            vstate.node_weight,
-                            vstate.internal_weight,
-                            mym as u64,
-                        );
-                        if delta_q > best_delta_q {
-                            best_delta_q = delta_q;
-                            best_comm = *comm;
-                            best_sigma_tot = *stot;
+                        for ((comm, stot, cost, m), _) in input {
+                            mym = *m;
+                            let delta_q = q(
+                                starting_comm,
+                                *comm,
+                                *stot,
+                                *cost as u64,
+                                vstate.node_weight,
+                                vstate.internal_weight,
+                                mym as u64,
+                            );
+                            if delta_q > best_delta_q {
+                                best_delta_q = delta_q;
+                                best_comm = *comm;
+                                best_sigma_tot = *stot;
+                            }
                         }
-                    }
-                    let mut new_vert = *vstate;
-                    if best_comm != vstate.community {
-                        new_vert.changed = true;
-                        new_vert.community_sigma_tot = best_sigma_tot;
-                        new_vert.community = best_comm;
-                    }
-                    output.push(((new_vert, mym), 1));
-                });
+                        let mut new_vert = *vstate;
+                        if best_comm != vstate.community
+                            && ((even && best_comm > vstate.community)
+                                || (!even && best_comm < vstate.community))
+                            && time_diff < *END_TIME
+                        {
+                            new_vert.community_sigma_tot = best_sigma_tot;
+                            new_vert.community = best_comm;
+                        }
+                        output.push(((new_vert, mym), 1));
+                    })
+                    .map(|((vid, _), (new_vert, m))| (vid, (new_vert, m)))
+                    .distinct();
 
                 louvain
             });
 
+            let possible_moves = edges
+                .map(|(key, (other, cost))| (other, (key, cost)))
+                .join_map(&louvain, |_other, (key, edge_cost), (rhs, _)| {
+                    ((*key, rhs.community, rhs.community_sigma_tot), *edge_cost)
+                });
+
+            let possible_moves = possible_moves
+                .explode(|(k, edge_cost)| Some((k, edge_cost as isize)))
+                .count();
+
+            let eval = possible_moves.map(|((vid, comm, stot), cost)| (vid, (comm, stot, cost)));
+            let eval = eval.join_map(&louvain, |vid, (comm, stot, cost), (vstate, m)| {
+                ((*vid, *vstate), (*comm, *stot, *cost, *m))
+            });
+
+            eval.reduce(|(_, vstate), input, output| {
+                let mut k_i_in = vstate.internal_weight;
+                let mut mym = 1;
+                for ((comm, _, cost, m), _) in input {
+                    mym = *m;
+                    if *comm == vstate.community {
+                        k_i_in += *cost as u64;
+                    }
+                }
+                let m = mym as f64;
+                let k_i_in = k_i_in as f64;
+                let sigma_tot = vstate.community_sigma_tot as f64;
+                let k_i = (vstate.node_weight + vstate.internal_weight) as f64;
+                let q = (k_i_in / m) - ((sigma_tot * k_i) / (m.powf(2.0)));
+                if q > 0.0 {
+                    let q = OrderedFloat(q);
+                    output.push((q, 1));
+                }
+            })
+            .map(|(_, q)| ((), q))
+            .reduce(|_, input, output| {
+                let mut allq = OrderedFloat(0.0);
+                for (q, cnt) in input {
+                    allq += *q * (*cnt as f64);
+                }
+                output.push((allq, 1));
+            })
+            .inspect(|(x, _, _)| println!("{:?}", x));
+
             // clustered_louvain.inspect(|(x, _, _)| println!("{:?}", x));
 
-            clustered_louvain.probe_with(&mut probe);
+            louvain.probe_with(&mut probe);
 
             (node_handle, edge_handle)
         });

@@ -9,11 +9,13 @@ use serde::{Deserialize, Serialize};
 #[clap(setting = AppSettings::ColoredHelp)]
 pub struct Opts {
     #[clap(short, long)]
-    pub data: String, 
+    pub data: String,
     #[clap(short, long, default_value = "communication.ron")]
     pub timely_config: String,
-    #[clap(short, long, default_value="0")]
+    #[clap(short, long, default_value = "0")]
     pub verbose: u8,
+    #[clap(short, long, default_value = "5000")]
+    pub run_time: u128,
 }
 
 pub fn parse_opts() -> Opts {

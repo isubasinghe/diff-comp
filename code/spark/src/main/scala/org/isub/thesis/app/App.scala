@@ -148,7 +148,8 @@ object Louvain {
 
       even = !even 
       count += 1
-    } while(stop <= progressCounter && (even || (updated > 0 && count < maxIter)))
+    } while (count != 5)
+    // } while(stop <= progressCounter && (even || (updated > 0 && count < maxIter)))
     val duration = (System.nanoTime - start)/1e9d
     println(duration + "s")
 
@@ -165,6 +166,7 @@ object Louvain {
         //println(s"vid: $vid community: $community $q = ($k_i_in / $M) -  ( ($sigmaTot * $k_i) / math.pow($M, 2) )")
         if (q < 0) 0 else q
     })
+    
 
     val actualQ = newVerts.values.reduce(_+_)
     (actualQ, louvainGraph, count/2) 
